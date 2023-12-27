@@ -13,7 +13,8 @@ import (
 )
 
 func main() {
-	port := flag.Uint("port", 8080, "port for http api")
+	var port uint
+	flag.UintVar(&port, "port", 8080, "port for http api")
 	flag.Parse()
 
 	handler := http.NewServeMux()
