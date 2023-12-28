@@ -18,13 +18,7 @@ func main() {
 	flag.Parse()
 
 	handler := http.NewServeMux()
-	handler.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		response := "pong"
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Content-Length", strconv.Itoa(len(response)))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(response))
-	})
+	handler.HandleFunc("/ping", handleHealthCheck("pong"))
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: handler,
@@ -45,4 +39,14 @@ func main() {
 		log.Fatalf("server shutdown error: %v", err)
 	}
 	log.Printf("server shutdown with code: %v", sig)
+}
+
+func handleHealthCheck(message string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		response := message
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Length", strconv.Itoa(len(message)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(response))
+	}
 }
