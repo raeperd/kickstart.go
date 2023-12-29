@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -19,6 +20,11 @@ func main() {
 
 	handler := http.NewServeMux()
 	handler.HandleFunc("/ping", handleHealthCheck("pong"))
+	handler.HandleFunc("/debug/pprof/", pprof.Index)
+	handler.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	handler.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	handler.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	handler.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: handler,
