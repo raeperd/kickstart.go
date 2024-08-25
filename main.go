@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/pprof"
@@ -11,15 +12,31 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx, os.Stdout, os.Args); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, w io.Writer, args []string) error {
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	var port uint
-	flag.UintVar(&port, "port", 8080, "port for http api")
-	flag.Parse()
+	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
+	fs.SetOutput(w)
+	fs.UintVar(&port, "port", 8080, "port for http api")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
 
 	handler := http.NewServeMux()
-	handler.HandleFunc("/ping", handleHealthCheck("pong"))
+	handler.HandleFunc("/", handleHealthCheck("pong"))
 	handler.HandleFunc("/debug/pprof/", pprof.Index)
 	handler.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	handler.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -31,20 +48,19 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting http server for :%d", port)
+		log.Printf("listening on %s\n", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
+	<-ctx.Done()
 
-	exit := make(chan os.Signal, 1)
-	signal.Notify(exit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-
-	sig := <-exit
-	if err := server.Shutdown(context.Background()); err != nil {
-		log.Fatalf("server shutdown error: %v", err)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return err
 	}
-	log.Printf("server shutdown with code: %v", sig)
+	return nil
 }
 
 func handleHealthCheck(message string) http.HandlerFunc {
