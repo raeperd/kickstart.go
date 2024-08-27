@@ -9,7 +9,7 @@ compile:
 	go build -o $(TARGET_EXEC) . 
 
 test:
-	go test ./...
+	go test -race ./...
 
 lint:
 	golangci-lint run
