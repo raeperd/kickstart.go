@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -19,7 +20,7 @@ func TestHttp(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		if err := run(ctx, nil, []string{"testapp", "-port", port()}); err != nil {
+		if err := run(ctx, os.Stdout, []string{"testapp", "-port", port()}); err != nil {
 			log.Fatalf("%v\n", err)
 		}
 	}()
@@ -48,10 +49,9 @@ func endpoint() string {
 
 func port() string {
 	_portOnce.Do(func() {
-		log.Printf("getting a free port")
 		listener, err := net.Listen("tcp", ":0")
 		if err != nil {
-			log.Fatalf("Failed to get a free port: %v", err)
+			log.Fatalf("failed to listen: %v", err)
 		}
 		defer listener.Close()
 		addr := listener.Addr().(*net.TCPAddr)
