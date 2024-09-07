@@ -1,4 +1,9 @@
-on: [push]
+on:
+  push:
+    tags:
+      - 'v*'
+    braches:
+      - main
 
 env:
   REGISTRY_IMAGE: ghcr.io/raeperd/kickstart
