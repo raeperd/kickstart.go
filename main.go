@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,16 +33,16 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 		return err
 	}
 
+	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: route(),
 	}
 
-	log.SetOutput(w)
 	go func() {
-		log.Printf("listening on %s\n", server.Addr)
+		slog.InfoContext(ctx, "server started", slog.String("addr", server.Addr))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			slog.ErrorContext(ctx, "server error", slog.Any("error", err))
 		}
 	}()
 	<-ctx.Done()
