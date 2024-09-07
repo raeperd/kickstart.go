@@ -38,6 +38,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 		Handler: route(),
 	}
 
+	log.SetOutput(w)
 	go func() {
 		log.Printf("listening on %s\n", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
