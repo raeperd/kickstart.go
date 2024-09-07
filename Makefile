@@ -15,7 +15,7 @@ test:
 lint:
 	golangci-lint run
 
-run: compile
+run: build
 	./$(TARGET_EXEC) --port=$(PORT)
 
 docker:
