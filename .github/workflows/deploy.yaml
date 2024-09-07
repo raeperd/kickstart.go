@@ -1,4 +1,9 @@
-on: [push]
+on:
+  push:
+    tags:
+      - 'v*'
+    braches:
+      - main
 
 env:
   REGISTRY_IMAGE: ghcr.io/raeperd/kickstart
@@ -32,6 +37,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            VERSION=${{ github.ref_name }}
       - name: Export digest
         run: |
           mkdir -p /tmp/digests

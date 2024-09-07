@@ -2,11 +2,12 @@ TARGET_EXEC := app
 PORT := 8080
 IMAGE := ghcr.io/raeperd/kickstart
 TAG := local
+VERSION ?= $(TAG)
 
-all: compile test lint docker
+all: build test lint docker
 
-compile:
-	go build -o $(TARGET_EXEC) . 
+build:
+	go build -o $(TARGET_EXEC) -ldflags '-X main.Version=$(VERSION)' . 
 
 test:
 	go test -race ./...
@@ -18,7 +19,7 @@ run: compile
 	./$(TARGET_EXEC) --port=$(PORT)
 
 docker:
-	docker build . -t $(IMAGE):$(TAG)
+	docker build . --build-arg VERSION=$(VERSION) -t $(IMAGE):$(TAG)
 
 docker-run: docker 
 	docker run --rm -p $(PORT):8080 $(IMAGE):$(TAG)
