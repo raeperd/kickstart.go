@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,16 +33,9 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 		return err
 	}
 
-	handler := http.NewServeMux()
-	handler.HandleFunc("/", handleGetHealth())
-	handler.HandleFunc("/debug/pprof/", pprof.Index)
-	handler.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	handler.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	handler.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	handler.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: handler,
+		Handler: route(),
 	}
 
 	go func() {
