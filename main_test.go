@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"io"
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/carlmjohnson/be"
 )
 
 func TestHttp(t *testing.T) {
@@ -24,31 +26,19 @@ func TestHttp(t *testing.T) {
 	waitForHealthy(ctx, 2*time.Second, endpoint())
 
 	res, err := http.Get(endpoint())
-	if err != nil {
-		t.Fatal(err)
-	}
+	be.NilErr(t, err)
+	be.Equal(t, http.StatusOK, res.StatusCode)
+	be.Equal(t, "application/json", res.Header.Get("Content-Type"))
 
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("wanted: %d got: %d", http.StatusOK, res.StatusCode)
-	}
-
-	want := "text/plain; charset=utf-8"
-	got := res.Header.Get("Content-Type")
-	if got != want {
-		t.Fatalf("wanted: %s got: %s", want, got)
-	}
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := make(map[string]any)
+	err = json.NewDecoder(res.Body).Decode(&body)
+	be.NilErr(t, err)
 	defer res.Body.Close()
 
-	want = "pong"
-	got = string(body)
-	if len(want) != len(got) || want != got {
-		t.Fatalf("wanted: %s got: %s", want, string(body))
-	}
+	be.Nonzero(t, body["version"])
+	be.Nonzero(t, body["vcs.revision"])
+	be.Nonzero(t, body["vcs.time"])
+	be.Nonzero(t, body["vcs.modified"])
 
 }
 
