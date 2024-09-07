@@ -1,3 +1,3 @@
-module github.com/raeperd/go-http-template
+module github.com/raeperd/kickstart
 
 go 1.21.1

@@ -1,7 +1,7 @@
 on: [push]
 
 env:
-  REGISTRY_IMAGE: ghcr.io/raeperd/go-http-template
+  REGISTRY_IMAGE: ghcr.io/raeperd/kickstart
 
 jobs:
   build:

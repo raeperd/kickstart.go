@@ -1,4 +1,4 @@
-# go-http-template
+# kickstart.go
 Go http server api template with best practices, without 3rd dependency
 
 ## Getting started

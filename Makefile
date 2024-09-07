@@ -1,6 +1,6 @@
 TARGET_EXEC := app
 PORT := 8080
-IMAGE := ghcr.io/raeperd/go-http-template
+IMAGE := ghcr.io/raeperd/kickstart
 TAG := local
 
 all: compile test lint docker
