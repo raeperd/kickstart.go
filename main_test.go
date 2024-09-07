@@ -23,9 +23,9 @@ func TestHttp(t *testing.T) {
 			log.Fatalf("%v\n", err)
 		}
 	}()
-	waitForHealthy(ctx, 2*time.Second, endpoint())
+	waitForHealthy(ctx, 2*time.Second, endpoint()+"/health")
 
-	res, err := http.Get(endpoint())
+	res, err := http.Get(endpoint() + "/health")
 	be.NilErr(t, err)
 	be.Equal(t, http.StatusOK, res.StatusCode)
 	be.Equal(t, "application/json", res.Header.Get("Content-Type"))
