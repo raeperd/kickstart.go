@@ -3,6 +3,7 @@ ARG VERSION
 
 WORKDIR /src
 COPY . /src
+RUN make download
 RUN make build TARGET_EXEC=app CGO_ENABLED=0 VERSION=${VERSION}
 
 FROM scratch

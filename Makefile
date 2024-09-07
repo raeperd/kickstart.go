@@ -6,13 +6,16 @@ VERSION ?= $(TAG)
 
 all: build test lint docker
 
-build:
+download:
+	go mod download
+
+build: download
 	go build -o $(TARGET_EXEC) -ldflags '-X main.Version=$(VERSION)' . 
 
 test:
 	go test -race ./...
 
-lint:
+lint: download
 	golangci-lint run
 
 run: build
