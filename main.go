@@ -10,7 +10,6 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 )
@@ -36,7 +35,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	}
 
 	handler := http.NewServeMux()
-	handler.HandleFunc("/", handleHealthCheck("pong"))
+	handler.HandleFunc("/", handleGetHealth())
 	handler.HandleFunc("/debug/pprof/", pprof.Index)
 	handler.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	handler.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -61,14 +60,4 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 		return err
 	}
 	return nil
-}
-
-func handleHealthCheck(message string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		response := message
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Content-Length", strconv.Itoa(len(message)))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(response))
-	}
 }
