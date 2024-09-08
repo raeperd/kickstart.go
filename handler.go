@@ -1,8 +1,10 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"expvar"
+	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"runtime/debug"
@@ -59,3 +61,17 @@ func handleGetDebug() http.Handler {
 	mux.Handle("/debug/vars", expvar.Handler())
 	return mux
 }
+
+func handleGetOpenapi() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(200)
+		if _, err := w.Write(openapi); err != nil {
+			slog.ErrorContext(r.Context(), "failed to write openapi", slog.Any("error", err))
+		}
+	}
+}
+
+//go:embed api/openapi.yaml
+var openapi []byte
