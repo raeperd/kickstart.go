@@ -10,7 +10,7 @@ import (
 
 func route() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/health", handleGetHealth())
+	mux.Handle("GET /health", handleGetHealth())
 	mux.Handle("/debug/", handleGetDebug())
 
 	handler := accesslog(mux)
