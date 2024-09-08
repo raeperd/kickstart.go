@@ -54,3 +54,14 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	}
 	return nil
 }
+
+func route() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /health", handleGetHealth())
+	mux.Handle("GET /openapi.yaml", handleGetOpenapi())
+	mux.Handle("/debug/", handleGetDebug())
+
+	handler := accesslog(mux)
+	handler = recovery(handler)
+	return handler
+}

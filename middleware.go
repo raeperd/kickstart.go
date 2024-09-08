@@ -8,17 +8,6 @@ import (
 	"time"
 )
 
-func route() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("GET /health", handleGetHealth())
-	mux.Handle("GET /openapi.yaml", handleGetOpenapi())
-	mux.Handle("/debug/", handleGetDebug())
-
-	handler := accesslog(mux)
-	handler = recovery(handler)
-	return handler
-}
-
 func accesslog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
