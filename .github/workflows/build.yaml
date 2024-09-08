@@ -5,9 +5,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.21.x'
+          go-version-file: go.mod
       - run: make build VERSION=${{ github.ref_name }}
       - run: make test
       - run: make docker VERSION=${{ github.ref_name }} TAG=${{ github.ref_name }}
@@ -16,9 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.21.x'
+          go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.54
+          version: v1.60
