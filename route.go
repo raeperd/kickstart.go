@@ -21,9 +21,9 @@ func route() http.Handler {
 func accesslog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		wm := responseMirror{ResponseWriter: w}
+		wr := responseRecorder{ResponseWriter: w}
 
-		next.ServeHTTP(&wm, r)
+		next.ServeHTTP(&wr, r)
 
 		slog.InfoContext(r.Context(), "accessed",
 			slog.String("latency", time.Since(start).String()),
@@ -31,14 +31,14 @@ func accesslog(next http.Handler) http.Handler {
 			slog.String("path", r.URL.Path),
 			slog.String("query", r.URL.RawQuery),
 			slog.String("ip", r.RemoteAddr),
-			slog.Int("status", wm.status),
-			slog.Int("bytes", wm.numBytes))
+			slog.Int("status", wr.status),
+			slog.Int("bytes", wr.numBytes))
 	})
 }
 
 func recovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wm := responseMirror{ResponseWriter: w}
+		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
 			if err := recover(); err != nil {
 				if err == http.ErrAbortHandler {
@@ -57,35 +57,35 @@ func recovery(next http.Handler) http.Handler {
 					slog.String("query", r.URL.RawQuery),
 					slog.String("ip", r.RemoteAddr))
 
-				if !wm.written() {
+				if !wr.written() {
 					http.Error(w, fmt.Sprintf("%v", err), 500)
 				}
 			}
 		}()
-		next.ServeHTTP(&wm, r)
+		next.ServeHTTP(&wr, r)
 	})
 }
 
-type responseMirror struct {
+type responseRecorder struct {
 	http.ResponseWriter
 	status   int
 	numBytes int
 }
 
-func (re *responseMirror) Header() http.Header {
+func (re *responseRecorder) Header() http.Header {
 	return re.ResponseWriter.Header()
 }
 
-func (re *responseMirror) Write(b []byte) (int, error) {
+func (re *responseRecorder) Write(b []byte) (int, error) {
 	re.numBytes += len(b)
 	return re.ResponseWriter.Write(b)
 }
 
-func (re *responseMirror) WriteHeader(statusCode int) {
+func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 	re.ResponseWriter.WriteHeader(statusCode)
 }
 
-func (re responseMirror) written() bool {
+func (re responseRecorder) written() bool {
 	return re.status != 0
 }
