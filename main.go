@@ -27,6 +27,11 @@ func main() {
 	}
 }
 
+// run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
+// It listens on a port specified by the -port flag, defaulting to 8080.
+// This function is inspired by techniques discussed in the [blog post] By Mat Ryer:
+//
+// [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, args []string) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -61,6 +66,9 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	return nil
 }
 
+// route sets up and returns an [http.Handler] for all the server routes.
+// It is the single source of truth for all the routes.
+// You can add custom [http.Handler] as needed.
 func route() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", handleGetHealth())
@@ -72,8 +80,9 @@ func route() http.Handler {
 	return handler
 }
 
-var Version string
-
+// handleGetHealth returns an [http.HandlerFunc] that responds with the health status of the service.
+// It includes the service version, VCS revision, build time, and modified status.
+// The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
 func handleGetHealth() http.HandlerFunc {
 	type responseBody struct {
 		Version  string    `json:"version"`
@@ -108,6 +117,12 @@ func handleGetHealth() http.HandlerFunc {
 	}
 }
 
+// Version is set at build time using ldflags.
+// It is optional and can be omitted if not required.
+// Refer to [handleGetHealth] for more information.
+var Version string
+
+// handleGetDebug returns an [http.Handler] for debug routes, including pprof and expvar routes.
 func handleGetDebug() http.Handler {
 	mux := http.NewServeMux()
 
@@ -123,6 +138,8 @@ func handleGetDebug() http.Handler {
 	return mux
 }
 
+// handleGetOpenapi returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
+// The file is embedded in the binary using the go:embed directive.
 func handleGetOpenapi() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
@@ -134,9 +151,14 @@ func handleGetOpenapi() http.HandlerFunc {
 	}
 }
 
+// openapi holds the embedded OpenAPI YAML file.
+// Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
+//
 //go:embed api/openapi.yaml
 var openapi []byte
 
+// accesslog is a middleware that logs request and response details,
+// including latency, method, path, query parameters, IP address, response status, and bytes sent.
 func accesslog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -155,13 +177,14 @@ func accesslog(next http.Handler) http.Handler {
 	})
 }
 
+// recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
+// It must be the last middleware in the chain to ensure it captures all panics.
 func recovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
 			if err := recover(); err != nil {
-				if err == http.ErrAbortHandler {
-					// Handle the abort gracefully
+				if err == http.ErrAbortHandler { // Handle the abort gracefully
 					return
 				}
 
@@ -176,7 +199,7 @@ func recovery(next http.Handler) http.Handler {
 					slog.String("query", r.URL.RawQuery),
 					slog.String("ip", r.RemoteAddr))
 
-				if !wr.written() {
+				if wr.status == 0 { // response is not written yet
 					http.Error(w, fmt.Sprintf("%v", err), 500)
 				}
 			}
@@ -185,26 +208,27 @@ func recovery(next http.Handler) http.Handler {
 	})
 }
 
+// responseRecorder is a wrapper around [http.ResponseWriter] that records the status and bytes written during the response.
+// It implements the [http.ResponseWriter] interface by embedding the original ResponseWriter.
 type responseRecorder struct {
 	http.ResponseWriter
 	status   int
 	numBytes int
 }
 
+// Header implements the [http.ResponseWriter] interface.
 func (re *responseRecorder) Header() http.Header {
 	return re.ResponseWriter.Header()
 }
 
+// Write implements the [http.ResponseWriter] interface.
 func (re *responseRecorder) Write(b []byte) (int, error) {
 	re.numBytes += len(b)
 	return re.ResponseWriter.Write(b)
 }
 
+// WriteHeader implements the [http.ResponseWriter] interface.
 func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 	re.ResponseWriter.WriteHeader(statusCode)
-}
-
-func (re responseRecorder) written() bool {
-	return re.status != 0
 }
