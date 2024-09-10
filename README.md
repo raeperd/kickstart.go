@@ -4,11 +4,12 @@ Minimalistic http server template in go that is:
 - Single file 
 - Only standard library dependencies
 
-**Not** a framework, but a starting point for building HTTP services in Go.
-Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/#designing-for-testability), [earthboundkid](https://blog.carlana.net/post/2023/golang-git-hash-how-to/), [kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim)
+**Not** a framework, but a starting point for building HTTP services in Go.  
+
+Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/#designing-for-testability) & [earthboundkid](https://blog.carlana.net/post/2023/golang-git-hash-how-to/) and even [kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim)
 
 ## Features
-- Graceful shutdown: Handles SIGINT and SIGTERM signals to shutdown gracefully.
+- Graceful shutdown: Handles `SIGINT` and `SIGTERM` signals to shutdown gracefully.
 - Health endpoint: Returns the server's health status including version and revision.
 - OpenAPI endpoint: Serves an OpenAPI specification.
 - Debug information: Provides various debug metrics including pprof and expvars.
@@ -23,14 +24,14 @@ Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-serv
 Go 1.22 or later
 
 ### Suggested Dependencies
-- golangci-lint 
-- docker (for containerization)
+- [golangci-lint](https://golangci-lint.run/) 
 
 ### Build and run the server
 ```sh
 $ make run 
 ```
 - this will build the server and run it on port 8080
+- Checkout Makefile for more 
 
 ## Endpoints
 - GET /health: Returns the health of the service, including version, revision, and modification status.
@@ -40,4 +41,3 @@ $ make run
 
 ## OpenAPI
 - The OpenAPI definition file is embedded in the binary using Go's embed package and serves at the /openapi.yaml endpoint. Modify the api/openapi.yaml file to change the OpenAPI specifications.
-
