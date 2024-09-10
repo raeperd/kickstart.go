@@ -25,6 +25,7 @@ Go 1.22 or later
 
 ### Suggested Dependencies
 - [golangci-lint](https://golangci-lint.run/) 
+- [air](https://github.com/air-verse/air)
 
 ### Build and run the server
 ```sh

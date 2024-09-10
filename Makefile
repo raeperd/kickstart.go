@@ -21,6 +21,9 @@ lint: download
 run: build
 	./$(TARGET_EXEC) --port=$(PORT)
 
+watch:
+	air 
+
 docker:
 	docker build . --build-arg VERSION=$(VERSION) -t $(IMAGE):$(TAG)
 
