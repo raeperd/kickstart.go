@@ -55,24 +55,20 @@ func TestGetOpenapi(t *testing.T) {
 }
 
 // TestMain starts the server and runs all the tests.
-// in case of short test, (arg -short given by command line) the server is not started.
 // By doing this, you can run **actual** integration tests without starting the server.
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	flag.Parse()
-	short, _ := strconv.ParseBool(flag.CommandLine.Lookup("test.short").Value.String())
-	if !short {
-		args := []string{"testapp", "--port", port()}
-		go func() {
-			err := run(ctx, os.Stdout, args)
-			if err != nil {
-				log.Fatalf("failed to run with args %v got err %s\n", args, err)
-			}
-		}()
-		waitForHealthy(ctx, 2*time.Second, endpoint()+"/health")
-	}
+	flag.Parse() // NOTE: this is needed to parse args from go test command
+	args := []string{"testapp", "--port", port()}
+	go func() {
+		err := run(ctx, os.Stdout, args)
+		if err != nil {
+			log.Fatalf("failed to run with args %v got err %s\n", args, err)
+		}
+	}()
+	waitForHealthy(ctx, 2*time.Second, endpoint()+"/health")
 
 	os.Exit(m.Run())
 }
