@@ -6,7 +6,7 @@ Minimalistic http server template in go that is:
 
 **Not** a framework, but a starting point for building HTTP services in Go.  
 
-Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/#designing-for-testability) & [earthboundkid](https://blog.carlana.net/post/2023/golang-git-hash-how-to/) and even [kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim)
+Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years) & [earthboundkid](https://blog.carlana.net/post/2023/golang-git-hash-how-to/) and even [kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim)
 
 ## Features
 - Graceful shutdown: Handles `SIGINT` and `SIGTERM` signals to shutdown gracefully.
