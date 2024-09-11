@@ -15,6 +15,8 @@ Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-serv
 - Debug information: Provides various debug metrics including pprof and expvars.
 - Access logging: Logs request details including latency, method, path, status, and bytes written.
 - Panic recovery: Catch and log panics in HTTP handlers gracefully.
+- Fully documented: Includes comments and documentation for all exported functions and types.
+    - To remove comments in *.go files run `sed -i '' '/^\/\/.*$/d; /^\/\*\*/,/\*\//d' *.go`
 
 ## Getting started
 - Use this template to create a new repository
