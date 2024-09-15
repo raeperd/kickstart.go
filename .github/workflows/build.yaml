@@ -8,6 +8,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: check go mod
+        run: |
+          go mod download
+          go mod tidy
+          git diff --exit-code go.mod go.sum
       - run: make build VERSION=${{ github.ref_name }}
       - run: make test
       - run: docker build .
@@ -21,4 +26,4 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60
+          version: v1.61
