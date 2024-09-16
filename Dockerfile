@@ -1,5 +1,5 @@
 FROM golang:1.22-bullseye as builder
-ARG VERSION
+ARG VERSION=local
 
 WORKDIR /src
 COPY . /src
