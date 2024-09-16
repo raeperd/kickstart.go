@@ -15,7 +15,7 @@ jobs:
           git diff --exit-code go.mod go.sum
       - run: make build VERSION=${{ github.ref_name }}
       - run: make test
-      - run: docker build .
+      - run: make docker VERSION=${{ github.ref_name }}
 
   lint:
     runs-on: ubuntu-latest
