@@ -24,3 +24,13 @@ watch:
 
 clean:
 	rm -rf coverage.txt $(TARGET_EXEC) 
+
+IMAGE := ghcr.io/raeperd/kickstart
+docker:
+	docker build . --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION)
+
+docker-run: docker 
+	docker run --rm -p $(PORT):8080 $(IMAGE):$(VERSION)
+
+docker-clean:
+	docker image rm -f $(IMAGE):$(VERSION) || true
