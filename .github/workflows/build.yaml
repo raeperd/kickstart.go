@@ -16,6 +16,7 @@ jobs:
       - run: make build VERSION=${{ github.ref_name }}
       - run: make test
       - run: make docker VERSION=${{ github.ref_name }}
+      - run: make clean
 
   lint:
     runs-on: ubuntu-latest
