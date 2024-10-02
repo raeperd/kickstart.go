@@ -14,8 +14,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/carlmjohnson/be"
 )
 
 // TestGetHealth tests the /health endpoint.
@@ -32,10 +30,10 @@ func TestGetHealth(t *testing.T) {
 
 	// actual http request to the server.
 	res, err := http.Get(endpoint() + "/health")
-	be.NilErr(t, err)
-	be.Equal(t, http.StatusOK, res.StatusCode)
-	be.Equal(t, "application/json", res.Header.Get("Content-Type"))
-	be.NilErr(t, json.NewDecoder(res.Body).Decode(&response{}))
+	testNil(t, err)
+	testEqual(t, http.StatusOK, res.StatusCode)
+	testEqual(t, "application/json", res.Header.Get("Content-Type"))
+	testNil(t, json.NewDecoder(res.Body).Decode(&response{}))
 	defer res.Body.Close()
 }
 
@@ -43,15 +41,15 @@ func TestGetHealth(t *testing.T) {
 // You can add more test as needed without starting the server again.
 func TestGetOpenapi(t *testing.T) {
 	res, err := http.Get(endpoint() + "/openapi.yaml")
-	be.NilErr(t, err)
-	be.Equal(t, http.StatusOK, res.StatusCode)
-	be.Equal(t, "text/plain", res.Header.Get("Content-Type"))
+	testNil(t, err)
+	testEqual(t, http.StatusOK, res.StatusCode)
+	testEqual(t, "text/plain", res.Header.Get("Content-Type"))
 
 	sb := strings.Builder{}
 	_, err = io.Copy(&sb, res.Body)
-	be.NilErr(t, err)
+	testNil(t, err)
 	res.Body.Close()
-	be.In(t, "openapi: 3.0.0", sb.String())
+	testContains(t, "openapi: 3.0.0", sb.String())
 }
 
 // TestMain starts the server and runs all the tests.
@@ -120,5 +118,26 @@ func waitForHealthy(ctx context.Context, timeout time.Duration, endpoint string)
 			}
 			time.Sleep(250 * time.Millisecond)
 		}
+	}
+}
+
+func testEqual[T comparable](t testing.TB, want, got T) {
+	t.Helper()
+	if want != got {
+		t.Fatalf("want: %v; got: %v", want, got)
+	}
+}
+
+func testNil(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("got: %v", err)
+	}
+}
+
+func testContains(t testing.TB, needle string, haystack string) {
+	t.Helper()
+	if !strings.Contains(haystack, needle) {
+		t.Fatalf("%q not in %q", needle, haystack)
 	}
 }
