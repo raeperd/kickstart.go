@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -141,11 +142,12 @@ func handleGetDebug() http.Handler {
 // handleGetOpenapi returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
 // The file is embedded in the binary using the go:embed directive.
 func handleGetOpenapi() http.HandlerFunc {
+	body := bytes.Replace(openapi, []byte("${{ VERSION }}"), []byte(Version), 1)
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(200)
-		if _, err := w.Write(openapi); err != nil {
+		if _, err := w.Write(body); err != nil {
 			slog.ErrorContext(r.Context(), "failed to write openapi", slog.Any("error", err))
 		}
 	}

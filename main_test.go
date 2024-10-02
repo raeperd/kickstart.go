@@ -49,16 +49,21 @@ func TestGetOpenapi(t *testing.T) {
 	_, err = io.Copy(&sb, res.Body)
 	testNil(t, err)
 	res.Body.Close()
+
 	testContains(t, "openapi: 3.0.0", sb.String())
+	testContains(t, "version: "+Version, sb.String())
 }
 
 // TestMain starts the server and runs all the tests.
 // By doing this, you can run **actual** integration tests without starting the server.
 func TestMain(m *testing.M) {
+	flag.Parse() // NOTE: this is needed to parse args from go test command
+
+	Version = "test-version"
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	flag.Parse() // NOTE: this is needed to parse args from go test command
 	args := []string{"testapp", "--port", port()}
 	go func() {
 		err := run(ctx, os.Stdout, args)
