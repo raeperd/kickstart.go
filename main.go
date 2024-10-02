@@ -47,7 +47,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: route(),
+		Handler: route(slog.Default()),
 	}
 
 	go func() {
@@ -69,14 +69,14 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 // route sets up and returns an [http.Handler] for all the server routes.
 // It is the single source of truth for all the routes.
 // You can add custom [http.Handler] as needed.
-func route() http.Handler {
+func route(log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", handleGetHealth())
 	mux.Handle("GET /openapi.yaml", handleGetOpenapi())
 	mux.Handle("/debug/", handleGetDebug())
 
-	handler := accesslog(mux)
-	handler = recovery(handler)
+	handler := accesslog(mux, log)
+	handler = recovery(handler, log)
 	return handler
 }
 
@@ -159,14 +159,14 @@ var openapi []byte
 
 // accesslog is a middleware that logs request and response details,
 // including latency, method, path, query parameters, IP address, response status, and bytes sent.
-func accesslog(next http.Handler) http.Handler {
+func accesslog(next http.Handler, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wr := responseRecorder{ResponseWriter: w}
 
 		next.ServeHTTP(&wr, r)
 
-		slog.InfoContext(r.Context(), "accessed",
+		log.InfoContext(r.Context(), "accessed",
 			slog.String("latency", time.Since(start).String()),
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
@@ -179,7 +179,7 @@ func accesslog(next http.Handler) http.Handler {
 
 // recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
 // It must be the last middleware in the chain to ensure it captures all panics.
-func recovery(next http.Handler) http.Handler {
+func recovery(next http.Handler, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
@@ -191,7 +191,7 @@ func recovery(next http.Handler) http.Handler {
 				stack := make([]byte, 1024)
 				n := runtime.Stack(stack, true)
 
-				slog.ErrorContext(r.Context(), "panic!",
+				log.ErrorContext(r.Context(), "panic!",
 					slog.Any("error", err),
 					slog.String("stack", string(stack[:n])),
 					slog.String("method", r.Method),
