@@ -22,18 +22,23 @@ import (
 
 func main() {
 	ctx := context.Background()
-	if err := run(ctx, os.Stdout, os.Args); err != nil {
+	if err := run(ctx, os.Stdout, os.Args, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 }
+
+// Version is set at build time using ldflags.
+// It is optional and can be omitted if not required.
+// Refer to [handleGetHealth] for more information.
+var Version string
 
 // run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
 // It listens on a port specified by the -port flag, defaulting to 8080.
 // This function is inspired by techniques discussed in the [blog post] By Mat Ryer:
 //
 // [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
-func run(ctx context.Context, w io.Writer, args []string) error {
+func run(ctx context.Context, w io.Writer, args []string, version string) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -48,7 +53,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: route(slog.Default()),
+		Handler: route(slog.Default(), version),
 	}
 
 	go func() {
@@ -70,10 +75,10 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 // route sets up and returns an [http.Handler] for all the server routes.
 // It is the single source of truth for all the routes.
 // You can add custom [http.Handler] as needed.
-func route(log *slog.Logger) http.Handler {
+func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", handleGetHealth())
-	mux.Handle("GET /openapi.yaml", handleGetOpenapi())
+	mux.Handle("GET /health", handleGetHealth(version))
+	mux.Handle("GET /openapi.yaml", handleGetOpenapi(version))
 	mux.Handle("/debug/", handleGetDebug())
 
 	handler := accesslog(mux, log)
@@ -84,7 +89,7 @@ func route(log *slog.Logger) http.Handler {
 // handleGetHealth returns an [http.HandlerFunc] that responds with the health status of the service.
 // It includes the service version, VCS revision, build time, and modified status.
 // The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
-func handleGetHealth() http.HandlerFunc {
+func handleGetHealth(version string) http.HandlerFunc {
 	type responseBody struct {
 		Version  string    `json:"version"`
 		Revision string    `json:"vcs.revision"`
@@ -118,11 +123,6 @@ func handleGetHealth() http.HandlerFunc {
 	}
 }
 
-// Version is set at build time using ldflags.
-// It is optional and can be omitted if not required.
-// Refer to [handleGetHealth] for more information.
-var Version string
-
 // handleGetDebug returns an [http.Handler] for debug routes, including pprof and expvar routes.
 func handleGetDebug() http.Handler {
 	mux := http.NewServeMux()
@@ -141,8 +141,8 @@ func handleGetDebug() http.Handler {
 
 // handleGetOpenapi returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
 // The file is embedded in the binary using the go:embed directive.
-func handleGetOpenapi() http.HandlerFunc {
-	body := bytes.Replace(openapi, []byte("${{ VERSION }}"), []byte(Version), 1)
+func handleGetOpenapi(version string) http.HandlerFunc {
+	body := bytes.Replace(openapi, []byte("${{ VERSION }}"), []byte(version), 1)
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Access-Control-Allow-Origin", "*")

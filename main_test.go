@@ -51,7 +51,7 @@ func TestGetOpenapi(t *testing.T) {
 	res.Body.Close()
 
 	testContains(t, "openapi: 3.0.0", sb.String())
-	testContains(t, "version: "+Version, sb.String())
+	testContains(t, "version: "+version, sb.String())
 }
 
 // TestMain starts the server and runs all the tests.
@@ -59,14 +59,12 @@ func TestGetOpenapi(t *testing.T) {
 func TestMain(m *testing.M) {
 	flag.Parse() // NOTE: this is needed to parse args from go test command
 
-	Version = "test-version"
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	args := []string{"testapp", "--port", port()}
 	go func() {
-		err := run(ctx, os.Stdout, args)
+		err := run(ctx, os.Stdout, args, version)
 		if err != nil {
 			log.Fatalf("failed to run with args %v got err %s\n", args, err)
 		}
@@ -75,6 +73,8 @@ func TestMain(m *testing.M) {
 
 	os.Exit(m.Run())
 }
+
+const version = "test-version"
 
 // endpoint returns the server endpoint started by [TestMain].
 func endpoint() string {
