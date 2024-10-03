@@ -91,14 +91,14 @@ func route(log *slog.Logger, version string) http.Handler {
 // The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
 func handleGetHealth(version string) http.HandlerFunc {
 	type responseBody struct {
-		Version  string    `json:"version"`
-		Revision string    `json:"vcs.revision"`
-		Time     time.Time `json:"vcs.time"`
-		Modified bool      `json:"vcs.modified"`
+		Version        string    `json:"Version"`
+		Uptime         string    `json:"Uptime"`
+		LastCommitHash string    `json:"LastCommitHash"`
+		LastCommitTime time.Time `json:"LastCommitTime"`
+		DirtyBuild     bool      `json:"DirtyBuild"`
 	}
 
-	var res responseBody
-	res.Version = Version
+	res := responseBody{Version: version}
 	buildInfo, _ := debug.ReadBuildInfo()
 	for _, kv := range buildInfo.Settings {
 		if kv.Value == "" {
@@ -106,17 +106,20 @@ func handleGetHealth(version string) http.HandlerFunc {
 		}
 		switch kv.Key {
 		case "vcs.revision":
-			res.Revision = kv.Value
+			res.LastCommitHash = kv.Value
 		case "vcs.time":
-			res.Time, _ = time.Parse(time.RFC3339, kv.Value)
+			res.LastCommitTime, _ = time.Parse(time.RFC3339, kv.Value)
 		case "vcs.modified":
-			res.Modified = kv.Value == "true"
+			res.DirtyBuild = kv.Value == "true"
 		}
 	}
 
+	up := time.Now()
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
+
+		res.Uptime = time.Since(up).String()
 		if err := json.NewEncoder(w).Encode(res); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
