@@ -1,18 +1,25 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VERSION: docker-compose
+    image: cosmtrek/air:v1.60.0
+    working_dir: /project
     ports:
       - 8080:8080
+    volumes:
+      - .:/project/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 1s
+    command: ["--", "--port=8080"]
 
   doc:
     image: swaggerapi/swagger-ui:v5.17.14
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     ports:
       - 80:8080
     environment:
-      SWAGGER_JSON_URL: http://localhost:8080/openapi.yam
+      SWAGGER_JSON_URL: http://localhost:8080/openapi.yaml
