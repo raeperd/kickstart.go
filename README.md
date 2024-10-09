@@ -17,7 +17,6 @@ Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-serv
 - Access logging: Logs request details including latency, method, path, status, and bytes written.
 - Panic recovery: Catch and log panics in HTTP handlers gracefully.
 - Fully documented: Includes comments and documentation for all exported functions and types.
-    - To remove comments in *.go files run `sed -i '' '/^\/\/.*$/d; /^\/\*\*/,/\*\//d' *.go`
 
 ## Getting started
 - Use this template to create a new repository
@@ -43,5 +42,14 @@ $ make run
 - GET /debug/pprof: Returns the pprof debug information.
 - GET /debug/vars: Returns the expvars debug information.
 
-## OpenAPI
-- The OpenAPI definition file is embedded in the binary using Go's embed package and serves at the /openapi.yaml endpoint. Modify the api/openapi.yaml file to change the OpenAPI specifications.
+## How to 
+
+### How to start a new project
+- Use this template to create a new repository
+- Or fork the repository and make changes to suit your needs.
+- Find and replace all strings `raeperd/kickstart.go` with your repository/image name
+
+### How to remove all comments from the code
+```sh
+$ sed -i '' '/^\/\/go:embed/! {/^\s*\/\/.*$/d; /^\s*\/\*\*/,/\*\//d;}' *.go
+```
