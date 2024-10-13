@@ -117,7 +117,7 @@ func handleGetHealth(version string) http.HandlerFunc {
 	up := time.Now()
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 
 		res.Uptime = time.Since(up).String()
 		if err := json.NewEncoder(w).Encode(res); err != nil {
@@ -149,7 +149,7 @@ func handleGetOpenapi(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(body); err != nil {
 			slog.ErrorContext(r.Context(), "failed to write openapi", slog.Any("error", err))
 		}
@@ -205,7 +205,7 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 					slog.String("ip", r.RemoteAddr))
 
 				if wr.status == 0 { // response is not written yet
-					http.Error(w, fmt.Sprintf("%v", err), 500)
+					http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
 				}
 			}
 		}()
