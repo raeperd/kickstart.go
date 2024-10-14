@@ -159,7 +159,7 @@ func handleGetOpenapi(version string) http.HandlerFunc {
 // openapi holds the embedded OpenAPI YAML file.
 // Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
 //
-//go:embed api/openapi.yaml
+//go:embed openapi.yaml
 var openapi []byte
 
 // accesslog is a middleware that logs request and response details,

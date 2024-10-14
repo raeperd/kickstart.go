@@ -8,7 +8,7 @@ download:
 	go mod download
 
 build: download
-	go build -o $(TARGET_EXEC) -ldflags '-w -X main.Version=$(VERSION)' . 
+	go build -o $(TARGET_EXEC) -ldflags '-w -X main.Version=$(VERSION)' -trimpath ./cmd/app/ 
 
 test:
 	go test -race -coverprofile=coverage.txt ./...
