@@ -11,7 +11,7 @@ build: download
 	go build -o $(TARGET_EXEC) -ldflags '-w -X main.Version=$(VERSION)' . 
 
 test:
-	go test -race -coverprofile=coverage.txt ./...
+	go test -shuffle=on -race -coverprofile=coverage.txt ./...
 
 lint: download
 	golangci-lint run
