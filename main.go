@@ -155,7 +155,7 @@ func handleGetOpenapi(version string) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(body); err != nil {
-			slog.ErrorContext(r.Context(), "failed to write openapi", slog.Any("error", err))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
