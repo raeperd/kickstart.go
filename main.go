@@ -56,20 +56,24 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		Handler: route(slog.Default(), version),
 	}
 
+	errChan := make(chan error, 1)
 	go func() {
 		slog.InfoContext(ctx, "server started", slog.String("addr", server.Addr))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.ErrorContext(ctx, "server error", slog.Any("error", err))
+			errChan <- err
 		}
 	}()
-	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
+	select {
+	case err := <-errChan:
 		return err
+	case <-ctx.Done():
+		slog.InfoContext(ctx, "shutting down server")
 	}
-	return nil
+
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return server.Shutdown(ctx)
 }
 
 // route sets up and returns an [http.Handler] for all the server routes.
