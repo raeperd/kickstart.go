@@ -21,5 +21,6 @@ services:
         condition: service_healthy
     ports:
       - 80:8080
-    environment:
-      SWAGGER_JSON_URL: http://localhost:8080/openapi.yaml
+    environment: # https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/
+      URLS: '[{url: "http://localhost:8080/openapi.yaml", name: "app"}]'
+      DEEP_LINKING: "true"
