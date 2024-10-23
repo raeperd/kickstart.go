@@ -19,6 +19,7 @@ import (
 // TestGetHealth tests the /health endpoint.
 // Server is started by [TestMain] so that the test can make requests to it.
 func TestGetHealth(t *testing.T) {
+	t.Parallel()
 	// response is repeated but this describes intention of test better.
 	// For example you can add fiels only needed for testing.
 	type response struct {
@@ -40,6 +41,7 @@ func TestGetHealth(t *testing.T) {
 // TestGetOpenapi tests the /openapi.yaml endpoint.
 // You can add more test as needed without starting the server again.
 func TestGetOpenapi(t *testing.T) {
+	t.Parallel()
 	res, err := http.Get(endpoint() + "/openapi.yaml")
 	testNil(t, err)
 	testEqual(t, http.StatusOK, res.StatusCode)
