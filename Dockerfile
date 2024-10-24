@@ -4,17 +4,17 @@ ARG VERSION=local
 WORKDIR /src
 
 # this will cache if the go.mod and go.sum files are not changed
-COPY ./go.mod /src
-COPY ./go.sum /src
-COPY ./Makefile /src
+COPY ./go.mod .
+COPY ./go.sum .
+COPY ./Makefile .
 
 RUN make download
 
-COPY . /src
+COPY . .
 
 RUN make build TARGET_EXEC=app CGO_ENABLED=0 VERSION=${VERSION}
 
-FROM scratch 
+FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /src/app /bin/app
 
