@@ -20,6 +20,19 @@ import (
 	"time"
 )
 
+var (
+	// Version is set at build time using ldflags.
+	// It is optional and can be omitted if not required.
+	// Refer to [handleGetHealth] for more information.
+	Version string
+
+	// openapi holds the embedded OpenAPI YAML file.
+	// Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
+	//
+	//go:embed api/openapi.yaml
+	openapi []byte
+)
+
 func main() {
 	ctx := context.Background()
 	if err := run(ctx, os.Stdout, os.Args, Version); err != nil {
@@ -27,11 +40,6 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-// Version is set at build time using ldflags.
-// It is optional and can be omitted if not required.
-// Refer to [handleGetHealth] for more information.
-var Version string
 
 // run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
 // It listens on a port specified by the -port flag, defaulting to 8080.
@@ -159,12 +167,6 @@ func handleGetOpenapi(version string) http.HandlerFunc {
 		}
 	}
 }
-
-// openapi holds the embedded OpenAPI YAML file.
-// Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
-//
-//go:embed api/openapi.yaml
-var openapi []byte
 
 // accesslog is a middleware that logs request and response details,
 // including latency, method, path, query parameters, IP address, response status, and bytes sent.
