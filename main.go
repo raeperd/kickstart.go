@@ -58,7 +58,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 
 	errChan := make(chan error, 1)
 	go func() {
-		slog.InfoContext(ctx, "server started", slog.String("addr", server.Addr))
+		slog.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}
