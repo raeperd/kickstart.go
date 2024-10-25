@@ -3,7 +3,6 @@ ARG VERSION=local
 
 WORKDIR /src
 
-# this will cache if the go.mod and go.sum files are not changed
 COPY ./go.mod ./go.sum ./
 COPY ./Makefile .
 
