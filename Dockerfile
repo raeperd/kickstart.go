@@ -12,8 +12,9 @@ COPY . .
 
 RUN make build TARGET_EXEC=app CGO_ENABLED=0 VERSION=${VERSION}
 
-FROM gcr.io/distroless/static-debian12
-
+FROM scratch
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /src/app /bin/app
 
 EXPOSE 8080
