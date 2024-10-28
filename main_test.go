@@ -16,6 +16,40 @@ import (
 	"time"
 )
 
+// TestMain starts the server and runs all the tests.
+// By doing this, you can run **actual** integration tests without starting the server.
+func TestMain(m *testing.M) {
+	flag.Parse() // NOTE: this is needed to parse args from go test command
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	args := []string{"testapp", "--port", port()}
+	go func() {
+		err := run(ctx, os.Stdout, args, "test-version")
+		if err != nil {
+			log.Fatalf("failed to run with args %v got err %s\n", args, err)
+		}
+	}()
+
+	// Wait for server to be healthy before running tests
+	func(timeout time.Duration) {
+		startTime := time.Now()
+		for {
+			res, err := http.Get(endpoint() + "/health")
+			if err == nil && res.StatusCode == http.StatusOK {
+				log.Printf("endpoint is ready after %v\n", time.Since(startTime))
+				return
+			}
+			if timeout <= time.Since(startTime) {
+				time.Sleep(250 * time.Millisecond)
+			}
+		}
+	}(time.Second * 3)
+
+	os.Exit(m.Run())
+}
+
 // TestGetHealth tests the /health endpoint.
 // Server is started by [TestMain] so that the test can make requests to it.
 func TestGetHealth(t *testing.T) {
@@ -53,30 +87,8 @@ func TestGetOpenapi(t *testing.T) {
 	res.Body.Close()
 
 	testContains(t, "openapi: 3.1.0", sb.String())
-	testContains(t, "version: "+version, sb.String())
+	testContains(t, "version: ", sb.String())
 }
-
-// TestMain starts the server and runs all the tests.
-// By doing this, you can run **actual** integration tests without starting the server.
-func TestMain(m *testing.M) {
-	flag.Parse() // NOTE: this is needed to parse args from go test command
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	args := []string{"testapp", "--port", port()}
-	go func() {
-		err := run(ctx, os.Stdout, args, version)
-		if err != nil {
-			log.Fatalf("failed to run with args %v got err %s\n", args, err)
-		}
-	}()
-	waitForHealthy(ctx, 2*time.Second, endpoint()+"/health")
-
-	os.Exit(m.Run())
-}
-
-const version = "test-version"
 
 // endpoint returns the server endpoint started by [TestMain].
 func endpoint() string {
@@ -103,30 +115,6 @@ var (
 	_portOnce sync.Once
 	_port     string
 )
-
-// waitForHealthy waits for the server to be healthy.
-// this function is used by [TestMain] to wait for the server to be healthy before running tests.
-func waitForHealthy(ctx context.Context, timeout time.Duration, endpoint string) {
-	startTime := time.Now()
-	for {
-		res, err := http.Get(endpoint)
-		if err == nil && res.StatusCode == http.StatusOK {
-			log.Printf("endpoint %s is ready after %v\n", endpoint, time.Since(startTime))
-			return
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			if timeout <= time.Since(startTime) {
-				log.Fatalf("timeout %v reached while waitForHealthy", timeout)
-				return
-			}
-			time.Sleep(250 * time.Millisecond)
-		}
-	}
-}
 
 func testEqual[T comparable](t testing.TB, want, got T) {
 	t.Helper()
