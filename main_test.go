@@ -18,7 +18,7 @@ import (
 // TestMain starts the server and runs all the tests.
 // By doing this, you can run **actual** integration tests without starting the server.
 func TestMain(m *testing.M) {
-	flag.Parse() // NOTE: required to test flags
+	flag.Parse() // NOTE: this is needed to parse args from go test command
 
 	port := func() string { // Get a free port to run the server
 		listener, err := net.Listen("tcp", ":0")
