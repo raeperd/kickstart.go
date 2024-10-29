@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -21,34 +20,40 @@ import (
 func TestMain(m *testing.M) {
 	flag.Parse() // NOTE: this is needed to parse args from go test command
 
+	port := func() string { // Get a free port to run the server
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+		}
+		defer listener.Close()
+		addr := listener.Addr().(*net.TCPAddr)
+		return strconv.Itoa(addr.Port)
+	}()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	args := []string{"testapp", "--port", port()}
-	go func() {
-		err := run(ctx, os.Stdout, args, "test-version")
-		if err != nil {
-			log.Fatalf("failed to run with args %v got err %s\n", args, err)
+	go func() { // Start the server in a goroutine
+		if err := run(ctx, os.Stdout, []string{"test", "--port", port}, "vtest"); err != nil {
+			log.Fatal(err)
 		}
 	}()
 
-	// Wait for server to be healthy before running tests
-	func(timeout time.Duration) {
-		startTime := time.Now()
-		for {
-			res, err := http.Get(endpoint() + "/health")
-			if err == nil && res.StatusCode == http.StatusOK {
-				log.Printf("endpoint is ready after %v\n", time.Since(startTime))
-				return
-			}
-			if timeout <= time.Since(startTime) {
-				time.Sleep(250 * time.Millisecond)
-			}
+	endpoint = "http://localhost:" + port
+
+	start := time.Now() // wait for server to be healthy before tests.
+	for time.Since(start) < 3*time.Second {
+		if res, err := http.Get(endpoint + "/health"); err == nil && res.StatusCode == http.StatusOK {
+			break
 		}
-	}(time.Second * 3)
+		time.Sleep(250 * time.Millisecond)
+	}
 
 	os.Exit(m.Run())
 }
+
+// endpoint holds the server endpoint started by TestMain, not intended to be updated.
+var endpoint string
 
 // TestGetHealth tests the /health endpoint.
 // Server is started by [TestMain] so that the test can make requests to it.
@@ -64,7 +69,7 @@ func TestGetHealth(t *testing.T) {
 	}
 
 	// actual http request to the server.
-	res, err := http.Get(endpoint() + "/health")
+	res, err := http.Get(endpoint + "/health")
 	testNil(t, err)
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
@@ -76,7 +81,7 @@ func TestGetHealth(t *testing.T) {
 // You can add more test as needed without starting the server again.
 func TestGetOpenapi(t *testing.T) {
 	t.Parallel()
-	res, err := http.Get(endpoint() + "/openapi.yaml")
+	res, err := http.Get(endpoint + "/openapi.yaml")
 	testNil(t, err)
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "text/plain", res.Header.Get("Content-Type"))
@@ -90,32 +95,6 @@ func TestGetOpenapi(t *testing.T) {
 	testContains(t, "version: ", sb.String())
 }
 
-// endpoint returns the server endpoint started by [TestMain].
-func endpoint() string {
-	return "http://localhost:" + port()
-}
-
-// port returns the port on which the server is started by [TestMain].
-// on the first call, it starts a listener on a random port and returns the port.
-func port() string {
-	_portOnce.Do(func() {
-		listener, err := net.Listen("tcp", ":0")
-		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-		defer listener.Close()
-		addr := listener.Addr().(*net.TCPAddr)
-		_port = strconv.Itoa(addr.Port)
-	})
-	return _port
-}
-
-// this variables is not intended to be used directly. use [port] function instead.
-var (
-	_portOnce sync.Once
-	_port     string
-)
-
 func testEqual[T comparable](t testing.TB, want, got T) {
 	t.Helper()
 	if want != got {
@@ -125,9 +104,7 @@ func testEqual[T comparable](t testing.TB, want, got T) {
 
 func testNil(t testing.TB, err error) {
 	t.Helper()
-	if err != nil {
-		t.Fatalf("got: %v", err)
-	}
+	testEqual(t, nil, err)
 }
 
 func testContains(t testing.TB, needle string, haystack string) {
