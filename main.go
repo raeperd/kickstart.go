@@ -21,8 +21,7 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
-	if err := run(ctx, os.Stdout, os.Args, Version); err != nil {
+	if err := run(context.Background(), os.Stdout, os.Args, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
