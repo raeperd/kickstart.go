@@ -134,14 +134,13 @@ func TestAccessLogMiddleware(t *testing.T) {
 
 	for _, tt := range tests {
 		name := strings.Join([]string{tt.Method, tt.Path, tt.Query, strconv.Itoa(tt.Status)}, " ")
-		//nolint:errcheck
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			var buffer strings.Builder
 			handler := accesslog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.Status)
-				w.Write(tt.body)
+				w.Write(tt.body) //nolint:errcheck
 			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
 
 			req := httptest.NewRequest(tt.Method, tt.Path+tt.Query, bytes.NewReader(tt.body))
@@ -162,8 +161,6 @@ func TestAccessLogMiddleware(t *testing.T) {
 }
 
 // TestRecoveryMiddleware tests recovery middleware
-//
-//nolint:errcheck
 func TestRecoveryMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -177,7 +174,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 			name: "no panic on normal http.Handler",
 			hf: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("success"))
+				w.Write([]byte("success")) //nolint:errcheck
 			},
 			wantCode:  http.StatusOK,
 			wantPanic: false,
