@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -95,6 +96,69 @@ func TestGetOpenapi(t *testing.T) {
 
 	testContains(t, "openapi: 3.1.0", sb.String())
 	testContains(t, "version: ", sb.String())
+}
+
+// TestAccessLogMiddleware tests accesslog middleware
+func TestAccessLogMiddleware(t *testing.T) {
+	t.Parallel()
+
+	type record struct {
+		Method string `json:"method"`
+		Path   string `json:"path"`
+		Query  string `json:"query"`
+		Status int    `json:"status"`
+		body   []byte `json:"-"`
+		Bytes  int    `json:"bytes"`
+	}
+
+	tests := []record{
+		{
+			Method: "GET",
+			Path:   "/test",
+			Query:  "?key=value",
+			Status: http.StatusOK,
+			body:   []byte(`{"hello":"world"}`),
+		},
+		{
+			Method: "POST",
+			Path:   "/api",
+			Status: http.StatusCreated,
+			body:   []byte(`{"id":1}`),
+		},
+		{
+			Method: "DELETE",
+			Path:   "/users/1",
+			Status: http.StatusNoContent,
+		},
+	}
+
+	for _, tt := range tests {
+		name := strings.Join([]string{tt.Method, tt.Path, tt.Query, strconv.Itoa(tt.Status)}, " ")
+		//nolint:errcheck
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buffer strings.Builder
+			handler := accesslog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.Status)
+				w.Write(tt.body)
+			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
+
+			req := httptest.NewRequest(tt.Method, tt.Path+tt.Query, bytes.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			var log record
+			err := json.NewDecoder(strings.NewReader(buffer.String())).Decode(&log)
+			testNil(t, err)
+
+			testEqual(t, tt.Method, log.Method)
+			testEqual(t, tt.Path, log.Path)
+			testEqual(t, strings.TrimPrefix(tt.Query, "?"), log.Query)
+			testEqual(t, len(tt.body), log.Bytes)
+			testEqual(t, tt.Status, log.Status)
+		})
+	}
 }
 
 // TestRecoveryMiddleware tests recovery middleware
