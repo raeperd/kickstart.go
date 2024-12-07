@@ -1,5 +1,5 @@
 # kickstart.go
-[![.github/workflows/build.yaml](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml/badge.svg)](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml) [![Go Report Card](https://goreportcard.com/badge/github.com/raeperd/kickstart.go)](https://goreportcard.com/report/github.com/raeperd/kickstart.go) [![Coverage Status](https://coveralls.io/repos/github/raeperd/kickstart.go/badge.svg?branch=ci-coverall)](https://coveralls.io/github/raeperd/kickstart.go?branch=ci-coverall)  
+[![.github/workflows/build.yaml](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml/badge.svg)](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml) [![Go Report Card](https://goreportcard.com/badge/github.com/raeperd/kickstart.go)](https://goreportcard.com/report/github.com/raeperd/kickstart.go) [![Coverage Status](https://coveralls.io/repos/github/raeperd/kickstart.go/badge.svg?branch=main)](https://coveralls.io/github/raeperd/kickstart.go?branch=main)  
 Minimalistic http server template in go that is:
 - Small (less than 300 lines of code)
 - Single file 
