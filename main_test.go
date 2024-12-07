@@ -6,8 +6,10 @@ import (
 	"flag"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
@@ -93,6 +95,63 @@ func TestGetOpenapi(t *testing.T) {
 
 	testContains(t, "openapi: 3.1.0", sb.String())
 	testContains(t, "version: ", sb.String())
+}
+
+// TestRecoveryMiddleware tests recovery middleware
+//
+//nolint:errcheck
+func TestRecoveryMiddleware(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		hf        func(w http.ResponseWriter, r *http.Request)
+		wantCode  int
+		wantPanic bool
+	}{
+		{
+			name: "no panic on normal http.Handler",
+			hf: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("success"))
+			},
+			wantCode:  http.StatusOK,
+			wantPanic: false,
+		},
+		{
+			name: "no panic on http.ErrAbortHandler",
+			hf: func(w http.ResponseWriter, r *http.Request) {
+				panic(http.ErrAbortHandler)
+			},
+			wantCode:  http.StatusOK,
+			wantPanic: false,
+		},
+		{
+			name: "panic on http.Handler",
+			hf: func(w http.ResponseWriter, r *http.Request) {
+				panic("something went wrong")
+			},
+			wantCode:  http.StatusInternalServerError,
+			wantPanic: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buffer strings.Builder
+			handler := recovery(http.HandlerFunc(tt.hf), slog.New(slog.NewTextHandler(&buffer, nil)))
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			testEqual(t, rec.Code, tt.wantCode)
+			if tt.wantPanic {
+				testContains(t, "panic!", buffer.String())
+			}
+		})
+	}
 }
 
 func testEqual[T comparable](t testing.TB, want, got T) {
