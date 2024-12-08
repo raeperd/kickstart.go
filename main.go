@@ -51,8 +51,9 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: route(slog.Default(), version),
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           route(slog.Default(), version),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errChan := make(chan error, 1)
