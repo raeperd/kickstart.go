@@ -190,25 +190,28 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
-			if err := recover(); err != nil {
-				if err == http.ErrAbortHandler { // Handle the abort gracefully
-					return
-				}
+			err := recover()
+			if err == nil {
+				return
+			}
 
-				stack := make([]byte, 1024)
-				n := runtime.Stack(stack, true)
+			if err == http.ErrAbortHandler { // Handle the abort gracefully
+				return
+			}
 
-				log.ErrorContext(r.Context(), "panic!",
-					slog.Any("error", err),
-					slog.String("stack", string(stack[:n])),
-					slog.String("method", r.Method),
-					slog.String("path", r.URL.Path),
-					slog.String("query", r.URL.RawQuery),
-					slog.String("ip", r.RemoteAddr))
+			stack := make([]byte, 1024)
+			n := runtime.Stack(stack, true)
 
-				if wr.status == 0 { // response is not written yet
-					http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
-				}
+			log.ErrorContext(r.Context(), "panic!",
+				slog.Any("error", err),
+				slog.String("stack", string(stack[:n])),
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("query", r.URL.RawQuery),
+				slog.String("ip", r.RemoteAddr))
+
+			if wr.status == 0 { // response is not written yet
+				http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
 			}
 		}()
 		next.ServeHTTP(&wr, r)
