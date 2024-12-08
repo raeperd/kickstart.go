@@ -212,9 +212,13 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 				slog.String("query", r.URL.RawQuery),
 				slog.String("ip", r.RemoteAddr))
 
-			if wr.status == 0 { // response is not written yet
-				http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+			if wr.status > 0 {
+				// response was already sent, nothing we can do
+				return
 			}
+
+			// send error response
+			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		}()
 		next.ServeHTTP(&wr, r)
 	})
