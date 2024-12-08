@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"expvar"
 	"flag"
 	"fmt"
@@ -195,7 +196,8 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 				return
 			}
 
-			if err == http.ErrAbortHandler { // Handle the abort gracefully
+			if err, ok := err.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				// Handle the abort gracefully
 				return
 			}
 
