@@ -11,9 +11,9 @@ This project was first introduced in GopherCon Korea 2024, See [session in this 
 Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years) & [earthboundkid](https://blog.carlana.net/post/2023/golang-git-hash-how-to/) and even [kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim)
 
 ## Features
-- Graceful shutdown: Handles `SIGINT` and `SIGTERM` signals to shutdown gracefully.
+- Graceful shutdown: Handles `SIGINT` and `SIGTERM` signals to shut down gracefully.
 - Health endpoint: Returns the server's health status including version and revision.
-- OpenAPI endpoint: Serves an OpenAPI specification. using `embed` package
+- OpenAPI endpoint: Serves an OpenAPI specification using `embed` package
 - Debug information: Provides various debug metrics including `pprof` and `expvars`.
 - Access logging: Logs HTTP request details using `slog`.
 - Panic recovery: Catch and log panics in HTTP handlers gracefully.
