@@ -203,7 +203,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 			var buffer strings.Builder
 			handler := recovery(http.HandlerFunc(tt.hf), slog.New(slog.NewTextHandler(&buffer, nil)))
 
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
