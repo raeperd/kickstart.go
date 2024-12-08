@@ -34,10 +34,9 @@ func TestMain(m *testing.M) {
 	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	go func() { // Start the server in a goroutine
 		if err := run(ctx, os.Stdout, []string{"test", "--port", port}, "vtest"); err != nil {
+			cancel()
 			log.Fatal(err)
 		}
 	}()
@@ -52,7 +51,9 @@ func TestMain(m *testing.M) {
 		time.Sleep(250 * time.Millisecond)
 	}
 
-	os.Exit(m.Run())
+	exitCode := m.Run()
+	cancel()
+	os.Exit(exitCode)
 }
 
 // endpoint holds the server endpoint started by TestMain, not intended to be updated.
