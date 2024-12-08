@@ -44,7 +44,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	var port uint
 	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
 	fs.SetOutput(w)
-	fs.UintVar(&port, "port", 8080, "port for http api")
+	fs.UintVar(&port, "port", 8080, "port for HTTP API")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
