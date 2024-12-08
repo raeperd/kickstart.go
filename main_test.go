@@ -207,7 +207,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
-			testEqual(t, rec.Code, tt.wantCode)
+			testEqual(t, tt.wantCode, rec.Code)
 			if tt.wantPanic {
 				testContains(t, "panic!", buffer.String())
 			}
