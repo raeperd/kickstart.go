@@ -215,21 +215,21 @@ func TestRecoveryMiddleware(t *testing.T) {
 	}
 }
 
-func testEqual[T comparable](t testing.TB, want, got T) {
-	t.Helper()
+func testEqual[T comparable](tb testing.TB, want, got T) {
+	tb.Helper()
 	if want != got {
-		t.Fatalf("want: %v; got: %v", want, got)
+		tb.Fatalf("want: %v; got: %v", want, got)
 	}
 }
 
-func testNil(t testing.TB, err error) {
-	t.Helper()
-	testEqual(t, nil, err)
+func testNil(tb testing.TB, err error) {
+	tb.Helper()
+	testEqual(tb, nil, err)
 }
 
-func testContains(t testing.TB, needle string, haystack string) {
-	t.Helper()
+func testContains(tb testing.TB, needle string, haystack string) {
+	tb.Helper()
 	if !strings.Contains(haystack, needle) {
-		t.Fatalf("%q not in %q", needle, haystack)
+		tb.Fatalf("%q not in %q", needle, haystack)
 	}
 }
