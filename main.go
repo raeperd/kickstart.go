@@ -119,7 +119,7 @@ func handleGetHealth(version string) http.HandlerFunc {
 	}
 
 	up := time.Now()
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
@@ -150,7 +150,7 @@ func handleGetDebug() http.Handler {
 // The file is embedded in the binary using the go:embed directive.
 func handleGetOpenapi(version string) http.HandlerFunc {
 	body := bytes.Replace(openapi, []byte("${{ VERSION }}"), []byte(version), 1)
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)

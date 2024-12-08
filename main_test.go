@@ -138,7 +138,7 @@ func TestAccessLogMiddleware(t *testing.T) {
 			t.Parallel()
 
 			var buffer strings.Builder
-			handler := accesslog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := accesslog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.Status)
 				w.Write(tt.body) //nolint:errcheck
 			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
@@ -172,7 +172,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	}{
 		{
 			name: "no panic on normal http.Handler",
-			hf: func(w http.ResponseWriter, r *http.Request) {
+			hf: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("success")) //nolint:errcheck
 			},
@@ -181,7 +181,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 		},
 		{
 			name: "no panic on http.ErrAbortHandler",
-			hf: func(w http.ResponseWriter, r *http.Request) {
+			hf: func(_ http.ResponseWriter, _ *http.Request) {
 				panic(http.ErrAbortHandler)
 			},
 			wantCode:  http.StatusOK,
@@ -189,7 +189,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 		},
 		{
 			name: "panic on http.Handler",
-			hf: func(w http.ResponseWriter, r *http.Request) {
+			hf: func(_ http.ResponseWriter, _ *http.Request) {
 				panic("something went wrong")
 			},
 			wantCode:  http.StatusInternalServerError,
