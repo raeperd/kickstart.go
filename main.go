@@ -82,7 +82,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", handleGetHealth(version))
-	mux.Handle("GET /openapi.yaml", handleGetOpenapi(version))
+	mux.Handle("GET /openapi.yaml", handleGetOpenAPI(version))
 	mux.Handle("/debug/", handleGetDebug())
 
 	handler := accesslog(mux, log)
@@ -146,10 +146,10 @@ func handleGetDebug() http.Handler {
 	return mux
 }
 
-// handleGetOpenapi returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
+// handleGetOpenAPI returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
 // The file is embedded in the binary using the go:embed directive.
-func handleGetOpenapi(version string) http.HandlerFunc {
-	body := bytes.Replace(openapi, []byte("${{ VERSION }}"), []byte(version), 1)
+func handleGetOpenAPI(version string) http.HandlerFunc {
+	body := bytes.Replace(openAPI, []byte("${{ VERSION }}"), []byte(version), 1)
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -158,11 +158,11 @@ func handleGetOpenapi(version string) http.HandlerFunc {
 	}
 }
 
-// openapi holds the embedded OpenAPI YAML file.
+// openAPI holds the embedded OpenAPI YAML file.
 // Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
 //
 //go:embed api/openapi.yaml
-var openapi []byte
+var openAPI []byte
 
 // accesslog is a middleware that logs request and response details,
 // including latency, method, path, query parameters, IP address, response status, and bytes sent.

@@ -80,9 +80,9 @@ func TestGetHealth(t *testing.T) {
 	defer res.Body.Close()
 }
 
-// TestGetOpenapi tests the /openapi.yaml endpoint.
+// TestGetOpenAPI tests the /openapi.yaml endpoint.
 // You can add more test as needed without starting the server again.
-func TestGetOpenapi(t *testing.T) {
+func TestGetOpenAPI(t *testing.T) {
 	t.Parallel()
 	res, err := http.Get(endpoint + "/openapi.yaml")
 	testNil(t, err)
