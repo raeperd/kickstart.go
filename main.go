@@ -71,7 +71,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		slog.InfoContext(ctx, "shutting down server")
 	}
 
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
 }
