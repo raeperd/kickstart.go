@@ -1,12 +1,12 @@
 # kickstart.go
-[![.github/workflows/build.yaml](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml/badge.svg)](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml)  [![Go Report Card](https://goreportcard.com/badge/github.com/raeperd/kickstart.go)](https://goreportcard.com/report/github.com/raeperd/kickstart.go) [![Coverage Status](https://coveralls.io/repos/github/raeperd/kickstart.go/badge.svg?branch=main)](https://coveralls.io/github/raeperd/kickstart.go?branch=main) [![Go Reference](https://pkg.go.dev/badge/github.com/raeperd/kickstart.go.svg)](https://pkg.go.dev/github.com/raeperd/kickstart.go) [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)  
+[![.github/workflows/build.yaml](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml/badge.svg)](https://github.com/raeperd/kickstart.go/actions/workflows/build.yaml)  [![Go Report Card](https://goreportcard.com/badge/github.com/raeperd/kickstart.go)](https://goreportcard.com/report/github.com/raeperd/kickstart.go) [![Coverage Status](https://coveralls.io/repos/github/raeperd/kickstart.go/badge.svg?branch=main)](https://coveralls.io/github/raeperd/kickstart.go?branch=main) [![Go Reference](https://pkg.go.dev/badge/github.com/raeperd/kickstart.go.svg)](https://pkg.go.dev/github.com/raeperd/kickstart.go) [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 Minimalistic http server template in go that is:
 - Small (less than 300 lines of code)
-- Single file 
+- Single file
 - Only standard library dependencies
 
-**Not** a framework, but a starting point for building HTTP services in Go.   
-This project was first introduced in Gophercon Korea 2024, See [session in this link](https://www.youtube.com/live/DEZsPOSzNM0?si=ioPPAAb5JnOnpAoc&t=5113)(in Korean) and see [presentation in this link](https://raeperd.dev/go2024)(in english)  
+**Not** a framework, but a starting point for building HTTP services in Go.
+This project was first introduced in Gophercon Korea 2024, See [session in this link](https://www.youtube.com/live/DEZsPOSzNM0?si=ioPPAAb5JnOnpAoc&t=5113)(in Korean) and see [presentation in this link](https://raeperd.dev/go2024)(in english)
 
 Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years) & [earthboundkid](https://blog.carlana.net/post/2023/golang-git-hash-how-to/) and even [kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim)
 
@@ -27,15 +27,15 @@ Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-serv
 Go 1.22 or later
 
 ### Suggested Dependencies
-- [golangci-lint](https://golangci-lint.run/) 
+- [golangci-lint](https://golangci-lint.run/)
 - [air](https://github.com/air-verse/air)
 
 ### Build and run the server
 ```sh
-$ make run 
+$ make run
 ```
 - this will build the server and run it on port 8080
-- Checkout Makefile for more 
+- Checkout Makefile for more
 
 ## Endpoints
 - GET /health: Returns the health of the service, including version, revision, and modification status.
@@ -43,7 +43,7 @@ $ make run
 - GET /debug/pprof: Returns the pprof debug information.
 - GET /debug/vars: Returns the expvars debug information.
 
-## How to 
+## How to
 
 ### How to start a new project
 - Use this template to create a new repository
