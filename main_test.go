@@ -74,10 +74,13 @@ func TestGetHealth(t *testing.T) {
 	// actual http request to the server.
 	res, err := http.Get(endpoint + "/health")
 	testNil(t, err)
+	t.Cleanup(func() {
+		err = res.Body.Close()
+		testNil(t, err)
+	})
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
 	testNil(t, json.NewDecoder(res.Body).Decode(&response{}))
-	defer res.Body.Close()
 }
 
 // TestGetOpenAPI tests the /openapi.yaml endpoint.
@@ -92,7 +95,10 @@ func TestGetOpenAPI(t *testing.T) {
 	sb := strings.Builder{}
 	_, err = io.Copy(&sb, res.Body)
 	testNil(t, err)
-	res.Body.Close()
+	t.Cleanup(func() {
+		err = res.Body.Close()
+		testNil(t, err)
+	})
 
 	testContains(t, "openapi: 3.1.0", sb.String())
 	testContains(t, "version: ", sb.String())
