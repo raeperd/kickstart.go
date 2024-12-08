@@ -213,7 +213,7 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 				slog.String("ip", r.RemoteAddr))
 
 			if wr.status == 0 { // response is not written yet
-				http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
+				http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 			}
 		}()
 		next.ServeHTTP(&wr, r)
