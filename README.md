@@ -31,9 +31,11 @@ Go 1.22 or later
 - [air](https://github.com/air-verse/air)
 
 ### Build and run the server
-```sh
+
+```console
 $ make run
 ```
+
 - this will build the server and run it on port 8080
 - Checkout Makefile for more
 
