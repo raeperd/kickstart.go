@@ -34,10 +34,9 @@ func TestMain(m *testing.M) {
 	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	go func() { // Start the server in a goroutine
 		if err := run(ctx, os.Stdout, []string{"test", "--port", port}, "vtest"); err != nil {
+			cancel()
 			log.Fatal(err)
 		}
 	}()
@@ -52,7 +51,9 @@ func TestMain(m *testing.M) {
 		time.Sleep(250 * time.Millisecond)
 	}
 
-	os.Exit(m.Run())
+	exitCode := m.Run()
+	cancel()
+	os.Exit(exitCode)
 }
 
 // endpoint holds the server endpoint started by TestMain, not intended to be updated.
@@ -74,25 +75,31 @@ func TestGetHealth(t *testing.T) {
 	// actual http request to the server.
 	res, err := http.Get(endpoint + "/health")
 	testNil(t, err)
+	t.Cleanup(func() {
+		err = res.Body.Close()
+		testNil(t, err)
+	})
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
 	testNil(t, json.NewDecoder(res.Body).Decode(&response{}))
-	defer res.Body.Close()
 }
 
-// TestGetOpenapi tests the /openapi.yaml endpoint.
+// TestGetOpenAPI tests the /openapi.yaml endpoint.
 // You can add more test as needed without starting the server again.
-func TestGetOpenapi(t *testing.T) {
+func TestGetOpenAPI(t *testing.T) {
 	t.Parallel()
 	res, err := http.Get(endpoint + "/openapi.yaml")
 	testNil(t, err)
 	testEqual(t, http.StatusOK, res.StatusCode)
-	testEqual(t, "text/plain", res.Header.Get("Content-Type"))
+	testEqual(t, "text/yaml", res.Header.Get("Content-Type"))
 
 	sb := strings.Builder{}
 	_, err = io.Copy(&sb, res.Body)
 	testNil(t, err)
-	res.Body.Close()
+	t.Cleanup(func() {
+		err = res.Body.Close()
+		testNil(t, err)
+	})
 
 	testContains(t, "openapi: 3.1.0", sb.String())
 	testContains(t, "version: ", sb.String())
@@ -138,7 +145,7 @@ func TestAccessLogMiddleware(t *testing.T) {
 			t.Parallel()
 
 			var buffer strings.Builder
-			handler := accesslog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := accesslog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.Status)
 				w.Write(tt.body) //nolint:errcheck
 			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
@@ -172,7 +179,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	}{
 		{
 			name: "no panic on normal http.Handler",
-			hf: func(w http.ResponseWriter, r *http.Request) {
+			hf: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("success")) //nolint:errcheck
 			},
@@ -181,7 +188,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 		},
 		{
 			name: "no panic on http.ErrAbortHandler",
-			hf: func(w http.ResponseWriter, r *http.Request) {
+			hf: func(_ http.ResponseWriter, _ *http.Request) {
 				panic(http.ErrAbortHandler)
 			},
 			wantCode:  http.StatusOK,
@@ -189,7 +196,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 		},
 		{
 			name: "panic on http.Handler",
-			hf: func(w http.ResponseWriter, r *http.Request) {
+			hf: func(_ http.ResponseWriter, _ *http.Request) {
 				panic("something went wrong")
 			},
 			wantCode:  http.StatusInternalServerError,
@@ -203,11 +210,11 @@ func TestRecoveryMiddleware(t *testing.T) {
 			var buffer strings.Builder
 			handler := recovery(http.HandlerFunc(tt.hf), slog.New(slog.NewTextHandler(&buffer, nil)))
 
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
-			testEqual(t, rec.Code, tt.wantCode)
+			testEqual(t, tt.wantCode, rec.Code)
 			if tt.wantPanic {
 				testContains(t, "panic!", buffer.String())
 			}
@@ -215,21 +222,21 @@ func TestRecoveryMiddleware(t *testing.T) {
 	}
 }
 
-func testEqual[T comparable](t testing.TB, want, got T) {
-	t.Helper()
+func testEqual[T comparable](tb testing.TB, want, got T) {
+	tb.Helper()
 	if want != got {
-		t.Fatalf("want: %v; got: %v", want, got)
+		tb.Fatalf("want: %v; got: %v", want, got)
 	}
 }
 
-func testNil(t testing.TB, err error) {
-	t.Helper()
-	testEqual(t, nil, err)
+func testNil(tb testing.TB, err error) {
+	tb.Helper()
+	testEqual(tb, nil, err)
 }
 
-func testContains(t testing.TB, needle string, haystack string) {
-	t.Helper()
+func testContains(tb testing.TB, needle string, haystack string) {
+	tb.Helper()
 	if !strings.Contains(haystack, needle) {
-		t.Fatalf("%q not in %q", needle, haystack)
+		tb.Fatalf("%q not in %q", needle, haystack)
 	}
 }

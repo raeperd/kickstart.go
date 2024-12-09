@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"expvar"
 	"flag"
 	"fmt"
@@ -44,15 +45,16 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	var port uint
 	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
 	fs.SetOutput(w)
-	fs.UintVar(&port, "port", 8080, "port for http api")
+	fs.UintVar(&port, "port", 8080, "port for HTTP API")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: route(slog.Default(), version),
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           route(slog.Default(), version),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errChan := make(chan error, 1)
@@ -70,7 +72,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		slog.InfoContext(ctx, "shutting down server")
 	}
 
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
 }
@@ -81,7 +83,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", handleGetHealth(version))
-	mux.Handle("GET /openapi.yaml", handleGetOpenapi(version))
+	mux.Handle("GET /openapi.yaml", handleGetOpenAPI(version))
 	mux.Handle("/debug/", handleGetDebug())
 
 	handler := accesslog(mux, log)
@@ -118,7 +120,7 @@ func handleGetHealth(version string) http.HandlerFunc {
 	}
 
 	up := time.Now()
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
@@ -145,23 +147,23 @@ func handleGetDebug() http.Handler {
 	return mux
 }
 
-// handleGetOpenapi returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
+// handleGetOpenAPI returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
 // The file is embedded in the binary using the go:embed directive.
-func handleGetOpenapi(version string) http.HandlerFunc {
-	body := bytes.Replace(openapi, []byte("${{ VERSION }}"), []byte(version), 1)
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
+func handleGetOpenAPI(version string) http.HandlerFunc {
+	body := bytes.Replace(openAPI, []byte("${{ VERSION }}"), []byte(version), 1)
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/yaml")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 	}
 }
 
-// openapi holds the embedded OpenAPI YAML file.
+// openAPI holds the embedded OpenAPI YAML file.
 // Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
 //
 //go:embed api/openapi.yaml
-var openapi []byte
+var openAPI []byte
 
 // accesslog is a middleware that logs request and response details,
 // including latency, method, path, query parameters, IP address, response status, and bytes sent.
@@ -189,26 +191,34 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
-			if err := recover(); err != nil {
-				if err == http.ErrAbortHandler { // Handle the abort gracefully
-					return
-				}
-
-				stack := make([]byte, 1024)
-				n := runtime.Stack(stack, true)
-
-				log.ErrorContext(r.Context(), "panic!",
-					slog.Any("error", err),
-					slog.String("stack", string(stack[:n])),
-					slog.String("method", r.Method),
-					slog.String("path", r.URL.Path),
-					slog.String("query", r.URL.RawQuery),
-					slog.String("ip", r.RemoteAddr))
-
-				if wr.status == 0 { // response is not written yet
-					http.Error(w, fmt.Sprintf("%v", err), http.StatusInternalServerError)
-				}
+			err := recover()
+			if err == nil {
+				return
 			}
+
+			if err, ok := err.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				// Handle the abort gracefully
+				return
+			}
+
+			stack := make([]byte, 1024)
+			n := runtime.Stack(stack, true)
+
+			log.ErrorContext(r.Context(), "panic!",
+				slog.Any("error", err),
+				slog.String("stack", string(stack[:n])),
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("query", r.URL.RawQuery),
+				slog.String("ip", r.RemoteAddr))
+
+			if wr.status > 0 {
+				// response was already sent, nothing we can do
+				return
+			}
+
+			// send error response
+			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		}()
 		next.ServeHTTP(&wr, r)
 	})
