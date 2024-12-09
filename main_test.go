@@ -62,8 +62,8 @@ var endpoint string
 // Server is started by [TestMain] so that the test can make requests to it.
 func TestGetHealth(t *testing.T) {
 	t.Parallel()
-	// response is repeated but this describes intention of test better.
-	// For example you can add fiels only needed for testing.
+	// response is repeated, but this describes intention of test better.
+	// For example, you can add fields only needed for testing.
 	type response struct {
 		Version  string    `json:"version"`
 		Revision string    `json:"vcs.revision"`
