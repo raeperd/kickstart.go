@@ -91,7 +91,7 @@ func TestGetOpenAPI(t *testing.T) {
 	res, err := http.Get(endpoint + "/openapi.yaml")
 	testNil(t, err)
 	testEqual(t, http.StatusOK, res.StatusCode)
-	testEqual(t, "text/yaml", res.Header.Get("Content-Type"))
+	testEqual(t, "application/yaml", res.Header.Get("Content-Type"))
 
 	sb := strings.Builder{}
 	_, err = io.Copy(&sb, res.Body)
