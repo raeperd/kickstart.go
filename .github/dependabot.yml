@@ -5,17 +5,32 @@ updates:
   # They will have to be merged manually by a maintainer
   - package-ecosystem: "gomod"
     directory: "/"
-    open-pull-requests-limit: 10 # avoid spam, if no one reacts
     schedule:
       interval: "weekly"
-      time: "11:00"
+      time: "00:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
 
   # Maintain dependencies for GitHub Actions
-  # These would open PR, these PR would be tested with the CI
-  # They will have to be merged manually by a maintainer
   - package-ecosystem: "github-actions"
     directory: "/"
-    open-pull-requests-limit: 10 # avoid spam, if no one reacts
     schedule:
       interval: "weekly"
-      time: "11:00"
+      time: "00:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Maintain dependencies for Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "00:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
