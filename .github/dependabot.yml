@@ -23,14 +23,3 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
-
-  # Maintain dependencies for Docker
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      time: "00:00"
-      timezone: "Etc/UTC"
-    commit-message:
-      prefix: "ci"
-      include: "scope"
