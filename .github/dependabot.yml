@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Maintain golang dependencies defined in go.mod
+  # These would open PR, these PR would be tested with the CI
+  # They will have to be merged manually by a maintainer
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "00:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "00:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Maintain dependencies for Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "00:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
