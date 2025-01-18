@@ -39,9 +39,6 @@ var Version string
 //
 // [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, args []string, version string) error {
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	var port uint
 	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
 	fs.SetOutput(w)
@@ -49,6 +46,22 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+
+	// NOTE: Removed `defer cancel()` since we want to control when to cancel the context
+	// We'll call it explicitly after server shutdown
+
+	// Initialize your resources here, for example:
+	// - Database connections
+	// - Message queue clients
+	// - Cache clients
+	// - External API clients
+	// Example:
+	// db, err := sql.Open(...)
+	// if err != nil {
+	//     return fmt.Errorf("database init: %w", err)
+	// }
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
@@ -70,11 +83,44 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		return err
 	case <-ctx.Done():
 		slog.InfoContext(ctx, "shutting down server")
-	}
 
-	ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
-	return server.Shutdown(ctx)
+		// Create a new context for shutdown with timeout
+		ctx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		// Shutdown the HTTP server first
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("server shutdown: %w", err)
+		}
+
+		// After server is shutdown, cancel the main context to close other resources
+		cancel()
+
+		// Add cleanup code here, in reverse order of initialization
+		// Give each cleanup operation its own timeout if needed
+
+		// Example cleanup sequence:
+		// 1. Close application services that depend on other resources
+		// if err := myService.Shutdown(ctx); err != nil {
+		//     return fmt.Errorf("service shutdown: %w", err)
+		// }
+
+		// 2. Close message queue connections
+		// if err := mqClient.Close(); err != nil {
+		//     return fmt.Errorf("mq shutdown: %w", err)
+		// }
+
+		// 3. Close cache connections
+		// if err := cacheClient.Close(); err != nil {
+		//     return fmt.Errorf("cache shutdown: %w", err)
+		// }
+
+		// 4. Close database connections
+		// if err := db.Close(); err != nil {
+		//     return fmt.Errorf("database shutdown: %w", err)
+		// }
+		return nil
+	}
 }
 
 // route sets up and returns an [http.Handler] for all the server routes.
