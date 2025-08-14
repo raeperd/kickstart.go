@@ -24,7 +24,7 @@ Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-serv
 - Or fork the repository and make changes to suit your needs.
 
 ### Requirements
-Go 1.22 or later
+Go 1.24 or later
 
 ### Suggested Dependencies
 - [golangci-lint](https://golangci-lint.run/)
