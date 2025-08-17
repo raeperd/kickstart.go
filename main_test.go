@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			log.Fatalf("failed to listen: %v", err)
 		}
-		defer listener.Close()
+		defer listener.Close() //nolint:errcheck
 		addr := listener.Addr().(*net.TCPAddr)
 		return strconv.Itoa(addr.Port)
 	}()
@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 	start := time.Now() // wait for server to be healthy before tests.
 	for time.Since(start) < 3*time.Second {
 		if res, err := http.Get(endpoint + "/health"); err == nil && res.StatusCode == http.StatusOK {
+			_ = res.Body.Close()
 			break
 		}
 		time.Sleep(250 * time.Millisecond)
