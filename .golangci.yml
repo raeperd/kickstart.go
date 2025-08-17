@@ -1,0 +1,55 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - copyloopvar
+    - dupl
+    - durationcheck
+    - errchkjson
+    - errname
+    - exhaustive
+    - exptostd
+    - funcorder
+    - ineffassign
+    - gosec
+    - gocritic
+    - misspell
+    - prealloc
+    - revive
+    - recvcheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+
+  settings:
+    gocritic:
+      enabled-tags: [diagnostic, performance]
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    goimports:
+      # TODO: replace this with your own package name
+      local-prefixes: ["github.com/raeperd/kickstart.go"] 
+
