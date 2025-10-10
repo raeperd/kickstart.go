@@ -15,6 +15,8 @@ test:
 
 lint: download
 	golangci-lint run
+	go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
+	go run golang.org/x/tools/cmd/deadcode@latest -test ./...
 
 run: build
 	./$(TARGET_EXEC) --port=$(PORT)
