@@ -4,6 +4,13 @@ on:
       - 'v*'
     branches:
       - main
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - '.github/workflows/deploy.yaml'
 
 env:
   REGISTRY_IMAGE: ghcr.io/raeperd/kickstart
