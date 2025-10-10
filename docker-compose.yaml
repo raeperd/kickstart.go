@@ -1,6 +1,6 @@
 services:
   app:
-    image: cosmtrek/air:v1.60.0
+    image: cosmtrek/air:v1.62.0
     working_dir: /project
     ports:
       - 8080:8080
