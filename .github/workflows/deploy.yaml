@@ -15,6 +15,10 @@ on:
 env:
   REGISTRY_IMAGE: ghcr.io/raeperd/kickstart
 
+permissions:
+  contents: read      # Required to checkout code
+  packages: write     # Required to push to GHCR
+
 jobs:
   build:
     runs-on: ubuntu-latest
