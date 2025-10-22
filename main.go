@@ -149,7 +149,7 @@ func handleGetHealth(version string) http.HandlerFunc {
 		DirtyBuild     bool      `json:"DirtyBuild"`
 	}
 
-	res := responseBody{Version: version}
+	baseRes := responseBody{Version: version}
 	buildInfo, _ := debug.ReadBuildInfo()
 	for _, kv := range buildInfo.Settings {
 		if kv.Value == "" {
@@ -157,11 +157,11 @@ func handleGetHealth(version string) http.HandlerFunc {
 		}
 		switch kv.Key {
 		case "vcs.revision":
-			res.LastCommitHash = kv.Value
+			baseRes.LastCommitHash = kv.Value
 		case "vcs.time":
-			res.LastCommitTime, _ = time.Parse(time.RFC3339, kv.Value)
+			baseRes.LastCommitTime, _ = time.Parse(time.RFC3339, kv.Value)
 		case "vcs.modified":
-			res.DirtyBuild = kv.Value == "true"
+			baseRes.DirtyBuild = kv.Value == "true"
 		}
 	}
 
@@ -170,6 +170,7 @@ func handleGetHealth(version string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
+		res := baseRes // Create a copy for each request to avoid data race
 		res.Uptime = time.Since(up).String()
 		if err := json.NewEncoder(w).Encode(res); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
