@@ -15,8 +15,8 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"runtime/debug"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -42,8 +42,8 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	port := uint64(8080)
 	if p := getenv("PORT"); p != "" {
 		var err error
-		if port, err = strconv.ParseUint(p, 10, 16); err != nil {
-			return fmt.Errorf("invalid PORT %q: %w", p, err)
+		if port, err = strconv.ParseUint(p, 10, 16); err != nil || port == 0 {
+			return fmt.Errorf("invalid PORT %q: port must be between 1 and 65535", p)
 		}
 	}
 
