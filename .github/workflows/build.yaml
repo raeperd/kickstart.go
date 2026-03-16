@@ -38,6 +38,6 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.5
+          version: v2.11
       - run: go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
       - run: go run golang.org/x/tools/cmd/deadcode@latest -test ./...
