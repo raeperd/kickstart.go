@@ -42,10 +42,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	var port uint16 = 8080
 	if p := getenv("PORT"); p != "" {
 		v, err := strconv.ParseUint(p, 10, 16)
-		if err != nil {
-			return fmt.Errorf("invalid PORT %q: %w", p, err)
-		}
-		if v == 0 {
+		if err != nil || v == 0 {
 			return fmt.Errorf("invalid PORT %q: port must be between 1 and 65535", p)
 		}
 		port = uint16(v)
