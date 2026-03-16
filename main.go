@@ -39,12 +39,16 @@ var Version string
 //
 // [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
-	port := uint64(8080)
+	var port uint16 = 8080
 	if p := getenv("PORT"); p != "" {
-		var err error
-		if port, err = strconv.ParseUint(p, 10, 16); err != nil || port == 0 {
+		v, err := strconv.ParseUint(p, 10, 16)
+		if err != nil {
+			return fmt.Errorf("invalid PORT %q: %w", p, err)
+		}
+		if v == 0 {
 			return fmt.Errorf("invalid PORT %q: port must be between 1 and 65535", p)
 		}
+		port = uint16(v)
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -72,7 +76,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 
 	errChan := make(chan error, 1)
 	go func() {
-		slog.InfoContext(ctx, "server started", slog.Uint64("port", port), slog.String("version", version))
+		slog.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}

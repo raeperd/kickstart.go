@@ -139,6 +139,17 @@ func TestRunInvalidPort(t *testing.T) {
 	}
 }
 
+// TestRunDefaultPort tests that run uses port 8080 when PORT is unset.
+func TestRunDefaultPort(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately so run exits after starting
+
+	noenv := func(string) string { return "" }
+	err := run(ctx, io.Discard, noenv, "vtest")
+	testNil(t, err)
+}
+
 // TestAccessLogMiddleware tests accesslog middleware
 func TestAccessLogMiddleware(t *testing.T) {
 	t.Parallel()
