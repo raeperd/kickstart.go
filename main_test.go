@@ -109,10 +109,19 @@ func TestGetOpenAPI(t *testing.T) {
 	testContains(t, "version: ", sb.String())
 }
 
-// TestRunInvalidPort tests that run returns an error for invalid PORT values.
-func TestRunInvalidPort(t *testing.T) {
+// TestRunPort tests port configuration via the PORT environment variable.
+func TestRunPort(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
+
+	t.Run("default when PORT is unset", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := run(ctx, io.Discard, func(string) string { return "" }, "vtest")
+		testNil(t, err)
+	})
+
+	invalidTests := []struct {
 		name string
 		port string
 	}{
@@ -121,7 +130,7 @@ func TestRunInvalidPort(t *testing.T) {
 		{"zero", "0"},
 		{"negative", "-1"},
 	}
-	for _, tt := range tests {
+	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			getenv := func(key string) string {
@@ -137,17 +146,6 @@ func TestRunInvalidPort(t *testing.T) {
 			testContains(t, "invalid PORT", err.Error())
 		})
 	}
-}
-
-// TestRunDefaultPort tests that run uses port 8080 when PORT is unset.
-func TestRunDefaultPort(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately so run exits after starting
-
-	noenv := func(string) string { return "" }
-	err := run(ctx, io.Discard, noenv, "vtest")
-	testNil(t, err)
 }
 
 // TestAccessLogMiddleware tests accesslog middleware
