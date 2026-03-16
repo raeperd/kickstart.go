@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"expvar"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,13 +15,14 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"runtime/debug"
 	"syscall"
 	"time"
 )
 
 func main() {
-	if err := run(context.Background(), os.Stdout, os.Args, Version); err != nil {
+	if err := run(context.Background(), os.Stdout, os.Getenv, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
@@ -34,17 +34,17 @@ func main() {
 var Version string
 
 // run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
-// It listens on a port specified by the -port flag, defaulting to 8080.
+// It listens on a port specified by the PORT environment variable, defaulting to 8080.
 // This function is inspired by techniques discussed in the [blog post] By Mat Ryer:
 //
 // [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
-func run(ctx context.Context, w io.Writer, args []string, version string) error {
-	var port uint
-	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
-	fs.SetOutput(w)
-	fs.UintVar(&port, "port", 8080, "port for HTTP API")
-	if err := fs.Parse(args[1:]); err != nil {
-		return err
+func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
+	port := uint64(8080)
+	if p := getenv("PORT"); p != "" {
+		var err error
+		if port, err = strconv.ParseUint(p, 10, 16); err != nil {
+			return fmt.Errorf("invalid PORT %q: %w", p, err)
+		}
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -72,7 +72,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 
 	errChan := make(chan error, 1)
 	go func() {
-		slog.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
+		slog.InfoContext(ctx, "server started", slog.Uint64("port", port), slog.String("version", version))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}

@@ -12,7 +12,8 @@ services:
       timeout: 2s
       retries: 10
       start_period: 1s
-    command: ["--", "--port=8080"]
+    environment:
+      PORT: "8080"
 
   doc:
     image: swaggerapi/swagger-ui:v5.17.14
