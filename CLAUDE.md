@@ -61,7 +61,7 @@ The entire server implementation resides in `main.go` with a clear structure:
 5. **Embedded Assets** - OpenAPI spec embedded via go:embed
 
 ### Key Patterns
-- **Dependency Injection**: run() accepts context, writer, args, and version for testability
+- **Dependency Injection**: run() accepts context, writer, getenv, and version for testability
 - **Graceful Shutdown**: Proper signal handling (SIGINT/SIGTERM) with cleanup
 - **Middleware Chain**: Composable middleware (logging → recovery → routes)
 - **Integration Testing**: Tests use real HTTP server with dynamic port allocation

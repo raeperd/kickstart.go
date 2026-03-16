@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"expvar"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,12 +16,13 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"syscall"
 	"time"
 )
 
 func main() {
-	if err := run(context.Background(), os.Stdout, os.Args, Version); err != nil {
+	if err := run(context.Background(), os.Stdout, os.Getenv, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
@@ -34,17 +34,18 @@ func main() {
 var Version string
 
 // run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
-// It listens on a port specified by the -port flag, defaulting to 8080.
+// It listens on a port specified by the PORT environment variable, defaulting to 8080.
 // This function is inspired by techniques discussed in the [blog post] By Mat Ryer:
 //
 // [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
-func run(ctx context.Context, w io.Writer, args []string, version string) error {
-	var port uint
-	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
-	fs.SetOutput(w)
-	fs.UintVar(&port, "port", 8080, "port for HTTP API")
-	if err := fs.Parse(args[1:]); err != nil {
-		return err
+func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
+	var port uint16 = 8080
+	if p := getenv("PORT"); p != "" {
+		v, err := strconv.ParseUint(p, 10, 16)
+		if err != nil || v == 0 {
+			return fmt.Errorf("invalid PORT %q: port must be between 1 and 65535", p)
+		}
+		port = uint16(v)
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)

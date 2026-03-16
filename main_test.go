@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"io"
 	"log"
 	"log/slog"
@@ -21,8 +20,6 @@ import (
 // TestMain starts the server and runs all the tests.
 // By doing this, you can run **actual** integration tests without starting the server.
 func TestMain(m *testing.M) {
-	flag.Parse() // NOTE: this is needed to parse args from go test command
-
 	port := func() string { // Get a free port to run the server
 		listener, err := net.Listen("tcp", ":0")
 		if err != nil {
@@ -35,7 +32,13 @@ func TestMain(m *testing.M) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { // Start the server in a goroutine
-		if err := run(ctx, os.Stdout, []string{"test", "--port", port}, "vtest"); err != nil {
+		getenv := func(key string) string {
+			if key == "PORT" {
+				return port
+			}
+			return ""
+		}
+		if err := run(ctx, os.Stdout, getenv, "vtest"); err != nil {
 			cancel()
 			log.Fatal(err)
 		}
@@ -104,6 +107,45 @@ func TestGetOpenAPI(t *testing.T) {
 
 	testContains(t, "openapi: 3.1.0", sb.String())
 	testContains(t, "version: ", sb.String())
+}
+
+// TestRunPort tests port configuration via the PORT environment variable.
+func TestRunPort(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default when PORT is unset", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := run(ctx, io.Discard, func(string) string { return "" }, "vtest")
+		testNil(t, err)
+	})
+
+	invalidTests := []struct {
+		name string
+		port string
+	}{
+		{"not a number", "abc"},
+		{"out of range", "70000"},
+		{"zero", "0"},
+		{"negative", "-1"},
+	}
+	for _, tt := range invalidTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			getenv := func(key string) string {
+				if key == "PORT" {
+					return tt.port
+				}
+				return ""
+			}
+			err := run(context.Background(), io.Discard, getenv, "vtest")
+			if err == nil {
+				t.Fatal("expected error for invalid PORT")
+			}
+			testContains(t, "invalid PORT", err.Error())
+		})
+	}
 }
 
 // TestAccessLogMiddleware tests accesslog middleware
