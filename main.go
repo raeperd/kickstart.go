@@ -151,18 +151,19 @@ func handleGetHealth(version string) http.HandlerFunc {
 	}
 
 	baseRes := responseBody{Version: version}
-	buildInfo, _ := debug.ReadBuildInfo()
-	for _, kv := range buildInfo.Settings {
-		if kv.Value == "" {
-			continue
-		}
-		switch kv.Key {
-		case "vcs.revision":
-			baseRes.LastCommitHash = kv.Value
-		case "vcs.time":
-			baseRes.LastCommitTime, _ = time.Parse(time.RFC3339, kv.Value)
-		case "vcs.modified":
-			baseRes.DirtyBuild = kv.Value == "true"
+	if buildInfo, ok := debug.ReadBuildInfo(); ok {
+		for _, kv := range buildInfo.Settings {
+			if kv.Value == "" {
+				continue
+			}
+			switch kv.Key {
+			case "vcs.revision":
+				baseRes.LastCommitHash = kv.Value
+			case "vcs.time":
+				baseRes.LastCommitTime, _ = time.Parse(time.RFC3339, kv.Value)
+			case "vcs.modified":
+				baseRes.DirtyBuild = kv.Value == "true"
+			}
 		}
 	}
 
