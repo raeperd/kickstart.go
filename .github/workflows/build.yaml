@@ -25,9 +25,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: make tidy
-      - run: git diff --exit-code go.mod go.sum
       - run: make build VERSION=${{ github.ref_name }}
+      - run: git diff --exit-code go.mod go.sum
       - run: make test
       - uses: shogo82148/actions-goveralls@v1
         with:
