@@ -17,8 +17,7 @@ import (
 	"time"
 )
 
-// TestMain starts the server and runs all the tests.
-// By doing this, you can run **actual** integration tests without starting the server.
+// TestMain starts a real server for integration tests.
 func TestMain(m *testing.M) {
 	port := func() string { // Get a free port to run the server
 		listener, err := net.Listen("tcp", ":0")
@@ -60,15 +59,12 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-// endpoint holds the server endpoint started by TestMain, not intended to be updated.
+// endpoint is set by TestMain; do not modify.
 var endpoint string
 
-// TestGetHealth tests the /health endpoint.
-// Server is started by [TestMain] so that the test can make requests to it.
+// TestGetHealth tests the /health endpoint against the real server.
 func TestGetHealth(t *testing.T) {
 	t.Parallel()
-	// response is repeated, but this describes intention of test better.
-	// For example, you can add fields only needed for testing.
 	type response struct {
 		Version        string    `json:"version"`
 		Uptime         string    `json:"uptime"`
@@ -77,7 +73,6 @@ func TestGetHealth(t *testing.T) {
 		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
-	// actual http request to the server.
 	res, err := http.Get(endpoint + "/health")
 	testNil(t, err)
 	t.Cleanup(func() {
@@ -95,7 +90,7 @@ func TestGetHealth(t *testing.T) {
 	}
 }
 
-// TestRunPort tests port configuration via the PORT environment variable.
+// TestRunPort tests invalid PORT values.
 func TestRunPort(t *testing.T) {
 	t.Parallel()
 
@@ -126,7 +121,7 @@ func TestRunPort(t *testing.T) {
 	}
 }
 
-// TestAccessLogMiddleware tests accesslog middleware
+// TestAccessLogMiddleware verifies logged fields match request/response.
 func TestAccessLogMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -188,7 +183,7 @@ func TestAccessLogMiddleware(t *testing.T) {
 	}
 }
 
-// TestRecoveryMiddleware tests recovery middleware
+// TestRecoveryMiddleware verifies panic handling and ErrAbortHandler.
 func TestRecoveryMiddleware(t *testing.T) {
 	t.Parallel()
 

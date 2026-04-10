@@ -26,16 +26,12 @@ func main() {
 	}
 }
 
-// Version is set at build time using ldflags.
-// It is optional and can be omitted if not required.
-// Refer to [handleHealth] for more information.
+// Version is set at build time via ldflags (e.g., -X main.Version=v1.0.0).
 var Version string
 
-// run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
-// It listens on a port specified by the PORT environment variable, defaulting to 8080.
-// This function is inspired by techniques discussed in the [blog post] By Mat Ryer:
-//
-// [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
+// run starts the [http.Server] and blocks until shutdown via OS signal.
+// Dependencies are injected as parameters for testability.
+// Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
 	var port uint16 = 8080
 	if p := getenv("PORT"); p != "" {
@@ -85,9 +81,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 }
 
-// route sets up and returns an [http.Handler] for all the server routes.
-// It is the single source of truth for all the routes.
-// You can add custom [http.Handler] as needed.
+// route is the single source of truth for all endpoints, middleware, and their dependencies.
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
@@ -98,9 +92,7 @@ func route(log *slog.Logger, version string) http.Handler {
 	return handler
 }
 
-// handleHealth returns an [http.HandlerFunc] that responds with the health status of the service.
-// It includes the service version, VCS revision, build time, and modified status.
-// The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
+// handleHealth responds with service health including version and VCS info.
 func handleHealth(version string) http.HandlerFunc {
 	type responseBody struct {
 		Version        string    `json:"version"`
@@ -139,7 +131,7 @@ func handleHealth(version string) http.HandlerFunc {
 	}
 }
 
-// handleDebug returns an [http.HandlerFunc] for debug routes, including pprof and expvar routes.
+// handleDebug registers pprof and expvar routes under /debug/.
 func handleDebug() http.HandlerFunc {
 	mux := http.NewServeMux()
 
@@ -155,8 +147,7 @@ func handleDebug() http.HandlerFunc {
 	return mux.ServeHTTP
 }
 
-// accesslog is a middleware that logs request and response details,
-// including latency, method, path, query parameters, IP address, response status, and bytes sent.
+// accesslog logs request and response details.
 func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -175,8 +166,7 @@ func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	}
 }
 
-// recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
-// It must be the last middleware in the chain to ensure it captures all panics.
+// recovery recovers from panics. Must be outermost middleware to catch all panics.
 func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
@@ -214,15 +204,14 @@ func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	}
 }
 
-// responseRecorder is a wrapper around [http.ResponseWriter] that records the status and bytes written during the response.
-// It implements the [http.ResponseWriter] interface by embedding the original ResponseWriter.
+// responseRecorder wraps [http.ResponseWriter] to record status and bytes written.
 type responseRecorder struct {
 	http.ResponseWriter
 	status   int
 	numBytes int
 }
 
-// Write implements the [http.ResponseWriter] interface.
+// Write records bytes and implicit 200 status.
 func (re *responseRecorder) Write(b []byte) (int, error) {
 	if re.status == 0 { // mirror net/http's implicit 200 on first Write
 		re.status = http.StatusOK
@@ -231,7 +220,7 @@ func (re *responseRecorder) Write(b []byte) (int, error) {
 	return re.ResponseWriter.Write(b)
 }
 
-// WriteHeader implements the [http.ResponseWriter] interface.
+// WriteHeader records the status code.
 func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 	re.ResponseWriter.WriteHeader(statusCode)
