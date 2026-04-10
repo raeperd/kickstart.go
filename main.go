@@ -30,7 +30,7 @@ func main() {
 
 // Version is set at build time using ldflags.
 // It is optional and can be omitted if not required.
-// Refer to [handleGetHealth] for more information.
+// Refer to [handleHealth] for more information.
 var Version string
 
 // run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
@@ -129,19 +129,19 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 // You can add custom [http.Handler] as needed.
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handleGetHealth(version))
-	mux.HandleFunc("GET /openapi.yaml", handleGetOpenAPI(version))
-	mux.HandleFunc("/debug/", handleGetDebug())
+	mux.HandleFunc("GET /health", handleHealth(version))
+	mux.HandleFunc("GET /openapi.yaml", handleOpenAPI(version))
+	mux.HandleFunc("/debug/", handleDebug())
 
 	handler := accesslog(mux, log)
 	handler = recovery(handler, log)
 	return handler
 }
 
-// handleGetHealth returns an [http.HandlerFunc] that responds with the health status of the service.
+// handleHealth returns an [http.HandlerFunc] that responds with the health status of the service.
 // It includes the service version, VCS revision, build time, and modified status.
 // The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
-func handleGetHealth(version string) http.HandlerFunc {
+func handleHealth(version string) http.HandlerFunc {
 	type responseBody struct {
 		Version        string    `json:"Version"`
 		Uptime         string    `json:"Uptime"`
@@ -180,8 +180,8 @@ func handleGetHealth(version string) http.HandlerFunc {
 	}
 }
 
-// handleGetDebug returns an [http.HandlerFunc] for debug routes, including pprof and expvar routes.
-func handleGetDebug() http.HandlerFunc {
+// handleDebug returns an [http.HandlerFunc] for debug routes, including pprof and expvar routes.
+func handleDebug() http.HandlerFunc {
 	mux := http.NewServeMux()
 
 	// NOTE: this route is same as defined in net/http/pprof init function
@@ -196,9 +196,9 @@ func handleGetDebug() http.HandlerFunc {
 	return mux.ServeHTTP
 }
 
-// handleGetOpenAPI returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
+// handleOpenAPI returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
 // The file is embedded in the binary using the go:embed directive.
-func handleGetOpenAPI(version string) http.HandlerFunc {
+func handleOpenAPI(version string) http.HandlerFunc {
 	body := bytes.Replace(openAPI, []byte("${{ VERSION }}"), []byte(version), 1)
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
