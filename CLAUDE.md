@@ -12,12 +12,6 @@ kickstart.go is a minimalistic HTTP server template in Go that serves as a produ
 ```bash
 # Build and run server on port 8080
 make run
-
-# Hot reload development (requires air)
-make watch
-
-# Docker development environment
-docker-compose up
 ```
 
 ### Testing
@@ -105,9 +99,7 @@ When extending the server:
 
 ## Docker Development
 
-The docker-compose setup includes:
-- **app** service: Air hot reload container watching file changes
-- Health checks configured for production readiness
+Use `make docker-run` to build and run the Docker image locally.
 
 ## CI/CD Notes
 
