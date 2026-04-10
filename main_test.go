@@ -59,6 +59,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+// endpoint is set by TestMain; do not modify.
 var endpoint string
 
 // TestGetHealth tests the /health endpoint against the real server.

@@ -29,7 +29,7 @@ func main() {
 // Version is set at build time via ldflags (e.g., -X main.Version=v1.0.0).
 var Version string
 
-// run starts the server and blocks until shutdown via OS signal.
+// run starts the [http.Server] and blocks until shutdown via OS signal.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
 	var port uint16 = 8080
@@ -80,7 +80,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 }
 
-// route registers all endpoints and wraps them with middleware.
+// route is the single source of truth for all endpoints and middleware.
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
