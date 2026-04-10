@@ -70,11 +70,11 @@ func TestGetHealth(t *testing.T) {
 	// response is repeated, but this describes intention of test better.
 	// For example, you can add fields only needed for testing.
 	type response struct {
-		Version        string    `json:"Version"`
-		Uptime         string    `json:"Uptime"`
-		LastCommitHash string    `json:"LastCommitHash"`
-		LastCommitTime time.Time `json:"LastCommitTime"`
-		DirtyBuild     bool      `json:"DirtyBuild"`
+		Version        string    `json:"version"`
+		Uptime         string    `json:"uptime"`
+		LastCommitHash string    `json:"lastCommitHash"`
+		LastCommitTime time.Time `json:"lastCommitTime"`
+		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
 	// actual http request to the server.
