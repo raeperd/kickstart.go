@@ -49,16 +49,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Initialize your resources here, for example:
-	// - Database connections
-	// - Message queue clients
-	// - Cache clients
-	// - External API clients
-	// Example:
-	// db, err := sql.Open(...)
-	// if err != nil {
-	//     return fmt.Errorf("database init: %w", err)
-	// }
+	// Initialize resources here
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
@@ -89,29 +80,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 			return fmt.Errorf("server shutdown: %w", err)
 		}
 
-		// Add cleanup code here, in reverse order of initialization
-		// Give each cleanup operation its own timeout if needed
-
-		// Example cleanup sequence:
-		// 1. Close application services that depend on other resources
-		// if err := myService.Shutdown(ctx); err != nil {
-		//     return fmt.Errorf("service shutdown: %w", err)
-		// }
-
-		// 2. Close message queue connections
-		// if err := mqClient.Close(); err != nil {
-		//     return fmt.Errorf("mq shutdown: %w", err)
-		// }
-
-		// 3. Close cache connections
-		// if err := cacheClient.Close(); err != nil {
-		//     return fmt.Errorf("cache shutdown: %w", err)
-		// }
-
-		// 4. Close database connections
-		// if err := db.Close(); err != nil {
-		//     return fmt.Errorf("database shutdown: %w", err)
-		// }
+		// Cleanup resources here, in reverse order of initialization
 		return nil
 	}
 }
