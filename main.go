@@ -129,9 +129,9 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 // You can add custom [http.Handler] as needed.
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", handleGetHealth(version))
-	mux.Handle("GET /openapi.yaml", handleGetOpenAPI(version))
-	mux.Handle("/debug/", handleGetDebug())
+	mux.HandleFunc("GET /health", handleGetHealth(version))
+	mux.HandleFunc("GET /openapi.yaml", handleGetOpenAPI(version))
+	mux.HandleFunc("/debug/", handleGetDebug())
 
 	handler := accesslog(mux, log)
 	handler = recovery(handler, log)
@@ -180,8 +180,8 @@ func handleGetHealth(version string) http.HandlerFunc {
 	}
 }
 
-// handleGetDebug returns an [http.Handler] for debug routes, including pprof and expvar routes.
-func handleGetDebug() http.Handler {
+// handleGetDebug returns an [http.HandlerFunc] for debug routes, including pprof and expvar routes.
+func handleGetDebug() http.HandlerFunc {
 	mux := http.NewServeMux()
 
 	// NOTE: this route is same as defined in net/http/pprof init function
@@ -193,7 +193,7 @@ func handleGetDebug() http.Handler {
 
 	// NOTE: this route is same as defined in expvar init function
 	mux.Handle("/debug/vars", expvar.Handler())
-	return mux
+	return mux.ServeHTTP
 }
 
 // handleGetOpenAPI returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
@@ -216,8 +216,8 @@ var openAPI []byte
 
 // accesslog is a middleware that logs request and response details,
 // including latency, method, path, query parameters, IP address, response status, and bytes sent.
-func accesslog(next http.Handler, log *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wr := responseRecorder{ResponseWriter: w}
 
@@ -231,13 +231,13 @@ func accesslog(next http.Handler, log *slog.Logger) http.Handler {
 			slog.String("ip", r.RemoteAddr),
 			slog.Int("status", wr.status),
 			slog.Int("bytes", wr.numBytes))
-	})
+	}
 }
 
 // recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
 // It must be the last middleware in the chain to ensure it captures all panics.
-func recovery(next http.Handler, log *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
 			err := recover()
@@ -270,7 +270,7 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		}()
 		next.ServeHTTP(&wr, r)
-	})
+	}
 }
 
 // responseRecorder is a wrapper around [http.ResponseWriter] that records the status and bytes written during the response.
