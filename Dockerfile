@@ -6,7 +6,7 @@ WORKDIR /src
 COPY ./go.mod ./go.sum ./
 COPY ./Makefile .
 
-RUN make download
+RUN go mod download
 
 COPY . .
 
