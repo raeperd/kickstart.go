@@ -18,7 +18,7 @@ lint: download
 	go run golang.org/x/tools/cmd/deadcode@latest -test ./...
 
 run: build
-	./$(TARGET_EXEC) --port=$(PORT)
+	PORT=$(PORT) ./$(TARGET_EXEC)
 
 watch:
 	air 
