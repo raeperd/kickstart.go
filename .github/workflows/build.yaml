@@ -1,4 +1,13 @@
 on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - '.github/workflows/build.yaml'
   pull_request:
     paths:
       - '**/*.go'
