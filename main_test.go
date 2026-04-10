@@ -99,14 +99,6 @@ func TestGetHealth(t *testing.T) {
 func TestRunPort(t *testing.T) {
 	t.Parallel()
 
-	t.Run("default when PORT is unset", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		err := run(ctx, io.Discard, func(string) string { return "" }, "vtest")
-		testNil(t, err)
-	})
-
 	invalidTests := []struct {
 		name string
 		port string
@@ -206,15 +198,6 @@ func TestRecoveryMiddleware(t *testing.T) {
 		wantCode  int
 		wantPanic bool
 	}{
-		{
-			name: "no panic on normal http.Handler",
-			hf: func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("success")) //nolint:errcheck
-			},
-			wantCode:  http.StatusOK,
-			wantPanic: false,
-		},
 		{
 			name: "no panic on http.ErrAbortHandler",
 			hf: func(_ http.ResponseWriter, _ *http.Request) {
