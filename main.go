@@ -66,7 +66,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		slog.InfoContext(ctx, "shutting down server")
+		slog.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
 
 		// Create a new context for shutdown with timeout
 		ctx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
