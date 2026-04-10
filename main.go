@@ -253,11 +253,6 @@ type responseRecorder struct {
 	numBytes int
 }
 
-// Header implements the [http.ResponseWriter] interface.
-func (re *responseRecorder) Header() http.Header {
-	return re.ResponseWriter.Header()
-}
-
 // Write implements the [http.ResponseWriter] interface.
 func (re *responseRecorder) Write(b []byte) (int, error) {
 	if re.status == 0 { // mirror net/http's implicit 200 on first Write
