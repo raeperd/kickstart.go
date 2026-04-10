@@ -74,7 +74,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	errChan := make(chan error, 1)
 	go func() {
 		slog.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}
 	}()
