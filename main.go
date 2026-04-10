@@ -49,9 +49,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-
-	// NOTE: Removed `defer cancel()` since we want to control when to cancel the context
-	// We'll call it explicitly after server shutdown
+	defer cancel()
 
 	// Initialize your resources here, for example:
 	// - Database connections
