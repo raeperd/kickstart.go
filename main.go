@@ -260,6 +260,9 @@ func (re *responseRecorder) Header() http.Header {
 
 // Write implements the [http.ResponseWriter] interface.
 func (re *responseRecorder) Write(b []byte) (int, error) {
+	if re.status == 0 { // mirror net/http's implicit 200 on first Write
+		re.status = http.StatusOK
+	}
 	re.numBytes += len(b)
 	return re.ResponseWriter.Write(b)
 }
