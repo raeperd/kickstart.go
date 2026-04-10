@@ -35,8 +35,6 @@ jobs:
       - uses: shogo82148/actions-goveralls@v1
         with:
           path-to-profile: coverage.txt
-      - run: make docker VERSION=${{ github.ref_name }}
-      - run: make clean
 
   lint:
     runs-on: ubuntu-latest
