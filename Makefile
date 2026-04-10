@@ -4,16 +4,17 @@ VERSION := local
 
 default: clean build lint test 
 
-download:
+tidy:
 	go mod download
+	go mod tidy
 
-build: download
+build: tidy
 	go build -o $(TARGET_EXEC) -ldflags '-w -X main.Version=$(VERSION)' . 
 
 test:
 	go test -shuffle=on -race -coverprofile=coverage.txt ./...
 
-lint: download
+lint: tidy
 	golangci-lint run
 	go run golang.org/x/tools/cmd/deadcode@latest -test ./...
 
