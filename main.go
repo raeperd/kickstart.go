@@ -49,9 +49,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-
-	// NOTE: Removed `defer cancel()` since we want to control when to cancel the context
-	// We'll call it explicitly after server shutdown
+	defer cancel()
 
 	// Initialize your resources here, for example:
 	// - Database connections
@@ -89,13 +87,9 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 		ctx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
-		// Shutdown the HTTP server first
 		if err := server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("server shutdown: %w", err)
 		}
-
-		// After server is shutdown, cancel the main context to close other resources
-		cancel()
 
 		// Add cleanup code here, in reverse order of initialization
 		// Give each cleanup operation its own timeout if needed
