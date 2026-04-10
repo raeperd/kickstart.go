@@ -288,6 +288,8 @@ func (re *responseRecorder) Header() http.Header {
 
 // Write implements the [http.ResponseWriter] interface.
 func (re *responseRecorder) Write(b []byte) (int, error) {
+	// Mirror net/http's implicit 200 when Write is called without WriteHeader,
+	// so the access log records the correct status instead of 0.
 	if re.status == 0 {
 		re.status = http.StatusOK
 	}
