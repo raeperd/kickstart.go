@@ -14,14 +14,3 @@ services:
       start_period: 1s
     environment:
       PORT: "8080"
-
-  doc:
-    image: swaggerapi/swagger-ui:v5.17.14
-    depends_on:
-      app:
-        condition: service_healthy
-    ports:
-      - 80:8080
-    environment: # https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/
-      URLS: '[{url: "http://localhost:8080/openapi.yaml", name: "app"}]'
-      DEEP_LINKING: "true"

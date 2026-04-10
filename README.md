@@ -13,7 +13,6 @@ Inspired by [Mat Ryer](https://grafana.com/blog/2024/02/09/how-i-write-http-serv
 ## Features
 - Graceful shutdown: Handles `SIGINT` and `SIGTERM` signals to shut down gracefully.
 - Health endpoint: Returns the server's health status including version and revision.
-- OpenAPI endpoint: Serves an OpenAPI specification using `embed` package
 - Debug information: Provides various debug metrics including `pprof` and `expvars`.
 - Access logging: Logs HTTP request details using `slog`.
 - Panic recovery: Catch and log panics in HTTP handlers gracefully.
@@ -41,7 +40,6 @@ $ make run
 
 ## Endpoints
 - GET /health: Returns the health of the service, including version, revision, and modification status.
-- GET /openapi.yaml: Returns the OpenAPI specification of the service.
 - GET /debug/pprof: Returns the pprof debug information.
 - GET /debug/vars: Returns the expvars debug information.
 

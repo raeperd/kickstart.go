@@ -16,7 +16,7 @@ make run
 # Hot reload development (requires air)
 make watch
 
-# Docker development environment with Swagger UI
+# Docker development environment
 docker-compose up
 ```
 
@@ -57,8 +57,7 @@ The entire server implementation resides in `main.go` with a clear structure:
 1. **main()** - Entry point that calls run() with dependencies
 2. **run()** - Core server logic, returns error for testability
 3. **Middleware** - accessLogMiddleware and recoveryMiddleware for cross-cutting concerns
-4. **Handlers** - healthHandler and openapiHandler for core endpoints
-5. **Embedded Assets** - OpenAPI spec embedded via go:embed
+4. **Handlers** - healthHandler for core endpoints
 
 ### Key Patterns
 - **Dependency Injection**: run() accepts context, writer, getenv, and version for testability
@@ -68,7 +67,6 @@ The entire server implementation resides in `main.go` with a clear structure:
 
 ### Endpoints
 - `GET /health` - Returns service health with version, uptime, git commit
-- `GET /openapi.yaml` - Serves embedded OpenAPI specification (CORS enabled)
 - `GET /debug/pprof/*` - Go profiling endpoints (CPU, heap, goroutines)
 - `GET /debug/vars` - Runtime metrics via expvar
 
@@ -109,7 +107,6 @@ When extending the server:
 
 The docker-compose setup includes:
 - **app** service: Air hot reload container watching file changes
-- **swagger-ui** service: Interactive API documentation at http://localhost:8081
 - Health checks configured for production readiness
 
 ## CI/CD Notes

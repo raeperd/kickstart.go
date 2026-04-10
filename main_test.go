@@ -88,27 +88,6 @@ func TestGetHealth(t *testing.T) {
 	testNil(t, json.NewDecoder(res.Body).Decode(&response{}))
 }
 
-// TestGetOpenAPI tests the /openapi.yaml endpoint.
-// You can add more test as needed without starting the server again.
-func TestGetOpenAPI(t *testing.T) {
-	t.Parallel()
-	res, err := http.Get(endpoint + "/openapi.yaml")
-	testNil(t, err)
-	testEqual(t, http.StatusOK, res.StatusCode)
-	testEqual(t, "application/yaml", res.Header.Get("Content-Type"))
-
-	sb := strings.Builder{}
-	_, err = io.Copy(&sb, res.Body)
-	testNil(t, err)
-	t.Cleanup(func() {
-		err = res.Body.Close()
-		testNil(t, err)
-	})
-
-	testContains(t, "openapi: 3.1.0", sb.String())
-	testContains(t, "version: ", sb.String())
-}
-
 // TestRunPort tests port configuration via the PORT environment variable.
 func TestRunPort(t *testing.T) {
 	t.Parallel()
