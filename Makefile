@@ -21,9 +21,6 @@ lint: tidy
 run: build
 	PORT=$(PORT) ./$(TARGET_EXEC)
 
-watch:
-	air 
-
 clean:
 	rm -rf coverage.txt $(TARGET_EXEC) 
 
