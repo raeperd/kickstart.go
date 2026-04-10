@@ -30,6 +30,7 @@ func main() {
 var Version string
 
 // run starts the [http.Server] and blocks until shutdown via OS signal.
+// Dependencies are injected as parameters for testability.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
 	var port uint16 = 8080
