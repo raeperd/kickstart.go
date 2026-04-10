@@ -5,7 +5,6 @@ VERSION := local
 default: clean build lint test 
 
 tidy:
-	go mod download
 	go mod tidy
 
 build: tidy
