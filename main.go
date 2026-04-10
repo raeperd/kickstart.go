@@ -80,8 +80,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 }
 
-// route is the single source of truth for all endpoints and middleware.
-// All dependencies are passed as parameters for testability.
+// route is the single source of truth for all endpoints, middleware, and their dependencies.
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
