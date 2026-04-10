@@ -70,10 +70,11 @@ func TestGetHealth(t *testing.T) {
 	// response is repeated, but this describes intention of test better.
 	// For example, you can add fields only needed for testing.
 	type response struct {
-		Version  string    `json:"version"`
-		Revision string    `json:"vcs.revision"`
-		Time     time.Time `json:"vcs.time"`
-		// Modified bool      `json:"vcs.modified"`
+		Version        string    `json:"Version"`
+		Uptime         string    `json:"Uptime"`
+		LastCommitHash string    `json:"LastCommitHash"`
+		LastCommitTime time.Time `json:"LastCommitTime"`
+		DirtyBuild     bool      `json:"DirtyBuild"`
 	}
 
 	// actual http request to the server.
@@ -85,7 +86,13 @@ func TestGetHealth(t *testing.T) {
 	})
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
-	testNil(t, json.NewDecoder(res.Body).Decode(&response{}))
+
+	var body response
+	testNil(t, json.NewDecoder(res.Body).Decode(&body))
+	testEqual(t, "vtest", body.Version)
+	if body.Uptime == "" {
+		t.Fatal("expected non-empty Uptime")
+	}
 }
 
 // TestGetOpenAPI tests the /openapi.yaml endpoint.
