@@ -134,11 +134,11 @@ func route(log *slog.Logger, version string) http.Handler {
 // The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
 func handleHealth(version string) http.HandlerFunc {
 	type responseBody struct {
-		Version        string    `json:"Version"`
-		Uptime         string    `json:"Uptime"`
-		LastCommitHash string    `json:"LastCommitHash"`
-		LastCommitTime time.Time `json:"LastCommitTime"`
-		DirtyBuild     bool      `json:"DirtyBuild"`
+		Version        string    `json:"version"`
+		Uptime         string    `json:"uptime"`
+		LastCommitHash string    `json:"lastCommitHash"`
+		LastCommitTime time.Time `json:"lastCommitTime"`
+		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
 	baseRes := responseBody{Version: version}
