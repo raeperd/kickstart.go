@@ -33,7 +33,7 @@ var Version string
 // Dependencies are injected as parameters for testability.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
-	var port uint64 = 8080
+	port := uint64(8080)
 	if p := getenv("PORT"); p != "" {
 		var err error
 		port, err = strconv.ParseUint(p, 10, 16)
