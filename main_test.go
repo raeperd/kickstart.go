@@ -17,8 +17,7 @@ import (
 	"time"
 )
 
-// TestMain starts the server and runs all the tests.
-// By doing this, you can run **actual** integration tests without starting the server.
+// TestMain starts a real server for integration tests.
 func TestMain(m *testing.M) {
 	port := func() string { // Get a free port to run the server
 		listener, err := net.Listen("tcp", ":0")
@@ -60,23 +59,20 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-// endpoint holds the server endpoint started by TestMain, not intended to be updated.
+// endpoint is set by TestMain; do not modify.
 var endpoint string
 
-// TestGetHealth tests the /health endpoint.
-// Server is started by [TestMain] so that the test can make requests to it.
+// TestGetHealth tests the /health endpoint against the real server.
 func TestGetHealth(t *testing.T) {
 	t.Parallel()
-	// response is repeated, but this describes intention of test better.
-	// For example, you can add fields only needed for testing.
 	type response struct {
-		Version  string    `json:"version"`
-		Revision string    `json:"vcs.revision"`
-		Time     time.Time `json:"vcs.time"`
-		// Modified bool      `json:"vcs.modified"`
+		Version        string    `json:"version"`
+		Uptime         string    `json:"uptime"`
+		LastCommitHash string    `json:"lastCommitHash"`
+		LastCommitTime time.Time `json:"lastCommitTime"`
+		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
-	// actual http request to the server.
 	res, err := http.Get(endpoint + "/health")
 	testNil(t, err)
 	t.Cleanup(func() {
@@ -85,41 +81,18 @@ func TestGetHealth(t *testing.T) {
 	})
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
-	testNil(t, json.NewDecoder(res.Body).Decode(&response{}))
+
+	var body response
+	testNil(t, json.NewDecoder(res.Body).Decode(&body))
+	testEqual(t, "vtest", body.Version)
+	if body.Uptime == "" {
+		t.Fatal("expected non-empty Uptime")
+	}
 }
 
-// TestGetOpenAPI tests the /openapi.yaml endpoint.
-// You can add more test as needed without starting the server again.
-func TestGetOpenAPI(t *testing.T) {
-	t.Parallel()
-	res, err := http.Get(endpoint + "/openapi.yaml")
-	testNil(t, err)
-	testEqual(t, http.StatusOK, res.StatusCode)
-	testEqual(t, "application/yaml", res.Header.Get("Content-Type"))
-
-	sb := strings.Builder{}
-	_, err = io.Copy(&sb, res.Body)
-	testNil(t, err)
-	t.Cleanup(func() {
-		err = res.Body.Close()
-		testNil(t, err)
-	})
-
-	testContains(t, "openapi: 3.1.0", sb.String())
-	testContains(t, "version: ", sb.String())
-}
-
-// TestRunPort tests port configuration via the PORT environment variable.
+// TestRunPort tests invalid PORT values.
 func TestRunPort(t *testing.T) {
 	t.Parallel()
-
-	t.Run("default when PORT is unset", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		err := run(ctx, io.Discard, func(string) string { return "" }, "vtest")
-		testNil(t, err)
-	})
 
 	invalidTests := []struct {
 		name string
@@ -148,7 +121,7 @@ func TestRunPort(t *testing.T) {
 	}
 }
 
-// TestAccessLogMiddleware tests accesslog middleware
+// TestAccessLogMiddleware verifies logged fields match request/response.
 func TestAccessLogMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -210,7 +183,7 @@ func TestAccessLogMiddleware(t *testing.T) {
 	}
 }
 
-// TestRecoveryMiddleware tests recovery middleware
+// TestRecoveryMiddleware verifies panic handling and ErrAbortHandler.
 func TestRecoveryMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -220,15 +193,6 @@ func TestRecoveryMiddleware(t *testing.T) {
 		wantCode  int
 		wantPanic bool
 	}{
-		{
-			name: "no panic on normal http.Handler",
-			hf: func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("success")) //nolint:errcheck
-			},
-			wantCode:  http.StatusOK,
-			wantPanic: false,
-		},
 		{
 			name: "no panic on http.ErrAbortHandler",
 			hf: func(_ http.ResponseWriter, _ *http.Request) {

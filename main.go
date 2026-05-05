@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"expvar"
@@ -28,16 +26,12 @@ func main() {
 	}
 }
 
-// Version is set at build time using ldflags.
-// It is optional and can be omitted if not required.
-// Refer to [handleGetHealth] for more information.
+// Version is set at build time via ldflags (e.g., -X main.Version=v1.0.0).
 var Version string
 
-// run initiates and starts the [http.Server], blocking until the context is canceled by OS signals.
-// It listens on a port specified by the PORT environment variable, defaulting to 8080.
-// This function is inspired by techniques discussed in the [blog post] By Mat Ryer:
-//
-// [blog post]: https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
+// run starts the [http.Server] and blocks until shutdown via OS signal.
+// Dependencies are injected as parameters for testability.
+// Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
 	var port uint64 = 8080
 	if p := getenv("PORT"); p != "" {
@@ -49,20 +43,9 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
-	// NOTE: Removed `defer cancel()` since we want to control when to cancel the context
-	// We'll call it explicitly after server shutdown
-
-	// Initialize your resources here, for example:
-	// - Database connections
-	// - Message queue clients
-	// - Cache clients
-	// - External API clients
-	// Example:
-	// db, err := sql.Open(...)
-	// if err != nil {
-	//     return fmt.Errorf("database init: %w", err)
-	// }
+	// Initialize resources here
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
@@ -83,71 +66,40 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		slog.InfoContext(ctx, "shutting down server")
+		slog.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
 
 		// Create a new context for shutdown with timeout
 		ctx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
-		// Shutdown the HTTP server first
 		if err := server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("server shutdown: %w", err)
 		}
 
-		// After server is shutdown, cancel the main context to close other resources
-		cancel()
-
-		// Add cleanup code here, in reverse order of initialization
-		// Give each cleanup operation its own timeout if needed
-
-		// Example cleanup sequence:
-		// 1. Close application services that depend on other resources
-		// if err := myService.Shutdown(ctx); err != nil {
-		//     return fmt.Errorf("service shutdown: %w", err)
-		// }
-
-		// 2. Close message queue connections
-		// if err := mqClient.Close(); err != nil {
-		//     return fmt.Errorf("mq shutdown: %w", err)
-		// }
-
-		// 3. Close cache connections
-		// if err := cacheClient.Close(); err != nil {
-		//     return fmt.Errorf("cache shutdown: %w", err)
-		// }
-
-		// 4. Close database connections
-		// if err := db.Close(); err != nil {
-		//     return fmt.Errorf("database shutdown: %w", err)
-		// }
+		// Cleanup resources here, in reverse order of initialization
 		return nil
 	}
 }
 
-// route sets up and returns an [http.Handler] for all the server routes.
-// It is the single source of truth for all the routes.
-// You can add custom [http.Handler] as needed.
+// route is the single source of truth for all endpoints, middleware, and their dependencies.
 func route(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /health", handleGetHealth(version))
-	mux.Handle("GET /openapi.yaml", handleGetOpenAPI(version))
-	mux.Handle("/debug/", handleGetDebug())
+	mux.HandleFunc("GET /health", handleHealth(version))
+	mux.HandleFunc("/debug/", handleDebug())
 
 	handler := accesslog(mux, log)
 	handler = recovery(handler, log)
 	return handler
 }
 
-// handleGetHealth returns an [http.HandlerFunc] that responds with the health status of the service.
-// It includes the service version, VCS revision, build time, and modified status.
-// The service version can be set at build time using the VERSION variable (e.g., 'make build VERSION=v1.0.0').
-func handleGetHealth(version string) http.HandlerFunc {
+// handleHealth responds with service health including version and VCS info.
+func handleHealth(version string) http.HandlerFunc {
 	type responseBody struct {
-		Version        string    `json:"Version"`
-		Uptime         string    `json:"Uptime"`
-		LastCommitHash string    `json:"LastCommitHash"`
-		LastCommitTime time.Time `json:"LastCommitTime"`
-		DirtyBuild     bool      `json:"DirtyBuild"`
+		Version        string    `json:"version"`
+		Uptime         string    `json:"uptime"`
+		LastCommitHash string    `json:"lastCommitHash"`
+		LastCommitTime time.Time `json:"lastCommitTime"`
+		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
 	baseRes := responseBody{Version: version}
@@ -169,19 +121,18 @@ func handleGetHealth(version string) http.HandlerFunc {
 
 	up := time.Now()
 	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
 		res := baseRes // Create a copy for each request to avoid data race
 		res.Uptime = time.Since(up).String()
+
+		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(res); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
 
-// handleGetDebug returns an [http.Handler] for debug routes, including pprof and expvar routes.
-func handleGetDebug() http.Handler {
+// handleDebug registers pprof and expvar routes under /debug/.
+func handleDebug() http.HandlerFunc {
 	mux := http.NewServeMux()
 
 	// NOTE: this route is same as defined in net/http/pprof init function
@@ -193,31 +144,12 @@ func handleGetDebug() http.Handler {
 
 	// NOTE: this route is same as defined in expvar init function
 	mux.Handle("/debug/vars", expvar.Handler())
-	return mux
+	return mux.ServeHTTP
 }
 
-// handleGetOpenAPI returns an [http.HandlerFunc] that serves the OpenAPI specification YAML file.
-// The file is embedded in the binary using the go:embed directive.
-func handleGetOpenAPI(version string) http.HandlerFunc {
-	body := bytes.Replace(openAPI, []byte("${{ VERSION }}"), []byte(version), 1)
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/yaml")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(body)
-	}
-}
-
-// openAPI holds the embedded OpenAPI YAML file.
-// Remove this and the api/openapi.yaml file if you prefer not to serve OpenAPI.
-//
-//go:embed api/openapi.yaml
-var openAPI []byte
-
-// accesslog is a middleware that logs request and response details,
-// including latency, method, path, query parameters, IP address, response status, and bytes sent.
-func accesslog(next http.Handler, log *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// accesslog logs request and response details.
+func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wr := responseRecorder{ResponseWriter: w}
 
@@ -231,13 +163,12 @@ func accesslog(next http.Handler, log *slog.Logger) http.Handler {
 			slog.String("ip", r.RemoteAddr),
 			slog.Int("status", wr.status),
 			slog.Int("bytes", wr.numBytes))
-	})
+	}
 }
 
-// recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
-// It must be the last middleware in the chain to ensure it captures all panics.
-func recovery(next http.Handler, log *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// recovery recovers from panics. Must be outermost middleware to catch all panics.
+func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
 			err := recover()
@@ -270,29 +201,26 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		}()
 		next.ServeHTTP(&wr, r)
-	})
+	}
 }
 
-// responseRecorder is a wrapper around [http.ResponseWriter] that records the status and bytes written during the response.
-// It implements the [http.ResponseWriter] interface by embedding the original ResponseWriter.
+// responseRecorder wraps [http.ResponseWriter] to record status and bytes written.
 type responseRecorder struct {
 	http.ResponseWriter
 	status   int
 	numBytes int
 }
 
-// Header implements the [http.ResponseWriter] interface.
-func (re *responseRecorder) Header() http.Header {
-	return re.ResponseWriter.Header()
-}
-
-// Write implements the [http.ResponseWriter] interface.
+// Write records bytes and implicit 200 status.
 func (re *responseRecorder) Write(b []byte) (int, error) {
+	if re.status == 0 { // mirror net/http's implicit 200 on first Write
+		re.status = http.StatusOK
+	}
 	re.numBytes += len(b)
 	return re.ResponseWriter.Write(b)
 }
 
-// WriteHeader implements the [http.ResponseWriter] interface.
+// WriteHeader records the status code.
 func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 	re.ResponseWriter.WriteHeader(statusCode)

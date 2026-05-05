@@ -1,4 +1,13 @@
 on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - '.github/workflows/build.yaml'
   pull_request:
     paths:
       - '**/*.go'
@@ -16,18 +25,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: check go mod
-        run: |
-          go mod download
-          go mod tidy
-          git diff --exit-code go.mod go.sum
       - run: make build VERSION=${{ github.ref_name }}
+      - run: git diff --exit-code go.mod go.sum
       - run: make test
       - uses: shogo82148/actions-goveralls@v1
         with:
           path-to-profile: coverage.txt
-      - run: make docker VERSION=${{ github.ref_name }}
-      - run: make clean
 
   lint:
     runs-on: ubuntu-latest

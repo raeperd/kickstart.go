@@ -4,24 +4,21 @@ VERSION := local
 
 default: clean build lint test 
 
-download:
-	go mod download
+tidy:
+	go mod tidy
 
-build: download
+build: tidy
 	go build -o $(TARGET_EXEC) -ldflags '-w -X main.Version=$(VERSION)' . 
 
 test:
 	go test -shuffle=on -race -coverprofile=coverage.txt ./...
 
-lint: download
+lint: tidy
 	golangci-lint run
 	go run golang.org/x/tools/cmd/deadcode@latest -test ./...
 
 run: build
-	./$(TARGET_EXEC) --port=$(PORT)
-
-watch:
-	air 
+	PORT=$(PORT) ./$(TARGET_EXEC)
 
 clean:
 	rm -rf coverage.txt $(TARGET_EXEC) 
