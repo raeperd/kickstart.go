@@ -198,7 +198,7 @@ func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 			}
 
 			// send error response
-			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}()
 		next.ServeHTTP(&wr, r)
 	}
