@@ -191,6 +191,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 		name      string
 		hf        func(w http.ResponseWriter, r *http.Request)
 		wantCode  int
+		wantBody  string
 		wantPanic bool
 	}{
 		{
@@ -207,6 +208,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 				panic("something went wrong")
 			},
 			wantCode:  http.StatusInternalServerError,
+			wantBody:  "internal server error\n",
 			wantPanic: true,
 		},
 	}
@@ -222,8 +224,10 @@ func TestRecoveryMiddleware(t *testing.T) {
 			handler.ServeHTTP(rec, req)
 
 			testEqual(t, tt.wantCode, rec.Code)
+			testEqual(t, tt.wantBody, rec.Body.String())
 			if tt.wantPanic {
 				testContains(t, "panic!", buffer.String())
+				testContains(t, "something went wrong", buffer.String())
 			}
 		})
 	}
