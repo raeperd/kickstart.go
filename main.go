@@ -50,7 +50,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slog.Default(), version),
+		Handler:           newRootHTTPHandler(slog.Default(), version),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -84,8 +84,8 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	}
 }
 
-// route is the single source of truth for all endpoints, middleware, and their dependencies.
-func route(log *slog.Logger, version string) http.Handler {
+// newRootHTTPHandler is the single source of truth for all endpoints, middleware, and their dependencies.
+func newRootHTTPHandler(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
 	mux.HandleFunc("/debug/", handleDebug())
