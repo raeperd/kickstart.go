@@ -373,6 +373,86 @@ func TestRequestOutcomes(t *testing.T) {
 	}
 }
 
+func TestRequestOutcomesHTTP2Informational(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name    string
+		handler http.HandlerFunc
+		status  int
+		body    string
+	}{
+		{
+			name: "explicit final status",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, "created")
+			},
+			status: http.StatusCreated,
+			body:   "created",
+		},
+		{
+			name:    "implicit final status",
+			handler: func(http.ResponseWriter, *http.Request) {},
+			status:  http.StatusOK,
+		},
+		{
+			name:    "recovered panic",
+			handler: func(http.ResponseWriter, *http.Request) { panic("private panic details") },
+			status:  http.StatusInternalServerError,
+			body:    "internal server error\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buffer bytes.Buffer
+			handler := requestOutcomes(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusSwitchingProtocols)
+				tt.handler.ServeHTTP(w, r)
+			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
+			server := httptest.NewUnstartedServer(handler)
+			server.EnableHTTP2 = true
+			server.StartTLS()
+			t.Cleanup(server.Close)
+			server.Client().Timeout = 5 * time.Second
+			var informational []int
+			trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+				informational = append(informational, code)
+				return nil
+			}}
+			req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, server.URL, nil)
+			testNil(t, err)
+			res, err := server.Client().Do(req)
+			testNil(t, err)
+			body, err := io.ReadAll(res.Body)
+			testNil(t, res.Body.Close())
+			testNil(t, err)
+			testEqual(t, 2, res.ProtoMajor)
+			testEqual(t, tt.status, res.StatusCode)
+			testEqual(t, tt.body, string(body))
+			testEqual(t, true, slices.Equal([]int{http.StatusSwitchingProtocols}, informational))
+			server.Close()
+			decoder := json.NewDecoder(&buffer)
+			accesses := 0
+			for decoder.More() {
+				var record struct {
+					Message string `json:"msg"`
+					Status  int    `json:"status"`
+					Bytes   int    `json:"bytes"`
+					Aborted bool   `json:"aborted"`
+				}
+				testNil(t, decoder.Decode(&record))
+				if record.Message == "accessed" {
+					accesses++
+					testEqual(t, tt.status, record.Status)
+					testEqual(t, len(tt.body), record.Bytes)
+					testEqual(t, false, record.Aborted)
+				}
+			}
+			testEqual(t, 1, accesses)
+		})
+	}
+}
+
 func TestRequestOutcomesImplicitHeaders(t *testing.T) {
 	t.Parallel()
 	var buffer bytes.Buffer

@@ -154,7 +154,7 @@ func handleDebug() http.HandlerFunc {
 func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		wr := responseRecorder{ResponseWriter: w}
+		wr := responseRecorder{ResponseWriter: w, protoMajor: r.ProtoMajor}
 		aborted := false
 		defer func() {
 			if !aborted && !wr.hijacked && !wr.committed() {
@@ -202,9 +202,10 @@ func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 // responseRecorder wraps [http.ResponseWriter] to record status and bytes written.
 type responseRecorder struct {
 	http.ResponseWriter
-	status   int // Zero means unwritten; 1xx except 101 is informational.
-	numBytes int
-	hijacked bool
+	status     int // Zero means unwritten; 1xx is informational except HTTP/1.x 101.
+	protoMajor int
+	numBytes   int
+	hijacked   bool
 }
 
 // Write records bytes accepted by the writer and the implicit final 200 status.
@@ -265,8 +266,8 @@ func (re *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return conn, rw, err
 }
 
-// committed reports whether a final status has been accepted. Other 1xx headers
-// are informational; 101 switches protocols and is final in net/http.
+// committed reports whether a final status has been accepted. net/http treats
+// 101 as final only for HTTP/1.x; every 1xx header is informational under HTTP/2.
 func (re *responseRecorder) committed() bool {
-	return re.status >= 200 || re.status == http.StatusSwitchingProtocols
+	return re.status >= 200 || (re.protoMajor == 1 && re.status == http.StatusSwitchingProtocols)
 }
