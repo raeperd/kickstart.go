@@ -22,12 +22,11 @@ import (
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	err := run(ctx, os.Stdout, os.Getenv, Version)
-	cancel()
-	if err != nil {
+	if err := run(ctx, os.Stdout, os.Getenv, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
+	cancel()
 }
 
 // Version is set at build time via ldflags (e.g., -X main.Version=v1.0.0).
