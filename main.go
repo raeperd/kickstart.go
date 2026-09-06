@@ -89,7 +89,8 @@ func newRootHTTPHandler(log *slog.Logger, version string) http.Handler {
 	mux.HandleFunc("GET /health", handleHealth(version))
 	mux.HandleFunc("/debug/", handleDebug())
 
-	return requestOutcomes(mux, log)
+	handler := recovery(mux, log)
+	return accesslog(handler, log)
 }
 
 // handleHealth responds with service health including version and VCS info.
@@ -147,14 +148,15 @@ func handleDebug() http.HandlerFunc {
 	return mux.ServeHTTP
 }
 
-// requestOutcomes owns response accounting, panic recovery, and the final access log.
-func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
+// accesslog logs the final response, including recovered panics and aborted requests.
+// Place it outside recovery so it observes the response recovery writes.
+func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wr := responseRecorder{ResponseWriter: w, protoMajor: r.ProtoMajor}
-		aborted := false
+		completed := false
 		defer func() {
-			if !aborted && !wr.committed() {
+			if completed && !wr.committed() {
 				wr.status = http.StatusOK // net/http sends 200 when the handler returns without a final header.
 			}
 			log.InfoContext(r.Context(), "accessed",
@@ -165,14 +167,23 @@ func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 				slog.String("ip", r.RemoteAddr),
 				slog.Int("status", wr.status),
 				slog.Int("bytes", wr.numBytes),
-				slog.Bool("aborted", aborted))
+				slog.Bool("aborted", !completed))
 		}()
+		next.ServeHTTP(&wr, r)
+		completed = true
+	}
+}
+
+// recovery sends a generic 500 before a final response is committed, and aborts
+// the connection or stream if a panic interrupts an already committed response.
+func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		wr := responseRecorder{ResponseWriter: w, protoMajor: r.ProtoMajor}
 		defer func() {
 			err := recover()
 			if err == nil {
 				return
 			}
-			aborted = true
 			if err == http.ErrAbortHandler {
 				panic(http.ErrAbortHandler) // Let net/http close the connection or reset the HTTP/2 stream.
 			}
@@ -187,7 +198,6 @@ func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 				panic(http.ErrAbortHandler) // A partial response cannot be replaced or completed safely.
 			}
 			http.Error(&wr, "internal server error", http.StatusInternalServerError)
-			aborted = false
 		}()
 		next.ServeHTTP(&wr, r)
 	}

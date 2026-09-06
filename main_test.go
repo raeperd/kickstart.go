@@ -125,8 +125,8 @@ func TestRunPort(t *testing.T) {
 	}
 }
 
-// TestRequestOutcomes checks the response on the wire and its final access record.
-func TestRequestOutcomes(t *testing.T) {
+// TestAccessLogRecovery checks the response on the wire and its final access record.
+func TestAccessLogRecovery(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
@@ -295,7 +295,7 @@ func TestRequestOutcomes(t *testing.T) {
 			t.Parallel()
 			var buffer bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&buffer, nil))
-			server := httptest.NewServer(requestOutcomes(tt.handler, logger))
+			server := httptest.NewServer(accesslog(recovery(tt.handler, logger), logger))
 			t.Cleanup(server.Close)
 			server.Client().Timeout = 5 * time.Second
 			var informational []int
@@ -373,7 +373,7 @@ func TestRequestOutcomes(t *testing.T) {
 	}
 }
 
-func TestRequestOutcomesInformationalProtocols(t *testing.T) {
+func TestAccessLogRecoveryInformationalProtocols(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name       string
@@ -415,10 +415,12 @@ func TestRequestOutcomesInformationalProtocols(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var buffer bytes.Buffer
-			handler := requestOutcomes(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger := slog.New(slog.NewJSONHandler(&buffer, nil))
+			handler := recovery(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusSwitchingProtocols)
 				tt.handler.ServeHTTP(w, r)
-			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
+			}), logger)
+			handler = accesslog(handler, logger)
 			server := httptest.NewUnstartedServer(handler)
 			server.EnableHTTP2 = tt.protoMajor == 2
 			server.StartTLS()
@@ -467,12 +469,14 @@ func TestRequestOutcomesInformationalProtocols(t *testing.T) {
 	}
 }
 
-func TestRequestOutcomesImplicitHeaders(t *testing.T) {
+func TestAccessLogRecoveryImplicitHeaders(t *testing.T) {
 	t.Parallel()
 	var buffer bytes.Buffer
-	handler := requestOutcomes(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	logger := slog.New(slog.NewJSONHandler(&buffer, nil))
+	handler := recovery(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "<html></html>")
-	}), slog.New(slog.NewJSONHandler(&buffer, nil)))
+	}), logger)
+	handler = accesslog(handler, logger)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	res := recorder.Result()
