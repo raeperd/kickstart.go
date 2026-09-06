@@ -26,8 +26,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
-	// Avoid defer: os.Exit skips it on error, which gocritic flags.
-	cancel()
+	cancel() // Avoid defer: os.Exit skips it on error, which gocritic flags.
 }
 
 // Version is set at build time via ldflags (e.g., -X main.Version=v1.0.0).
