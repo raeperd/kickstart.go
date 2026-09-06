@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -90,9 +92,7 @@ func newRootHTTPHandler(log *slog.Logger, version string) http.Handler {
 	mux.HandleFunc("GET /health", handleHealth(version))
 	mux.HandleFunc("/debug/", handleDebug())
 
-	handler := accesslog(mux, log)
-	handler = recovery(handler, log)
-	return handler
+	return requestOutcomes(mux, log)
 }
 
 // handleHealth responds with service health including version and VCS info.
@@ -150,43 +150,38 @@ func handleDebug() http.HandlerFunc {
 	return mux.ServeHTTP
 }
 
-// accesslog logs request and response details.
-func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
+// requestOutcomes owns response accounting, panic recovery, and the final access log.
+func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wr := responseRecorder{ResponseWriter: w}
-
-		next.ServeHTTP(&wr, r)
-
-		log.InfoContext(r.Context(), "accessed",
-			slog.String("latency", time.Since(start).String()),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.String("query", r.URL.RawQuery),
-			slog.String("ip", r.RemoteAddr),
-			slog.Int("status", wr.status),
-			slog.Int("bytes", wr.numBytes))
-	}
-}
-
-// recovery recovers from panics. Must be outermost middleware to catch all panics.
-func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		wr := responseRecorder{ResponseWriter: w}
+		aborted := false
+		defer func() {
+			if !aborted && !wr.hijacked && !wr.committed() {
+				wr.status = http.StatusOK // net/http sends 200 when the handler returns without a final header.
+			}
+			log.InfoContext(r.Context(), "accessed",
+				slog.String("latency", time.Since(start).String()),
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("query", r.URL.RawQuery),
+				slog.String("ip", r.RemoteAddr),
+				slog.Int("status", wr.status),
+				slog.Int("bytes", wr.numBytes),
+				slog.Bool("aborted", aborted),
+				slog.Bool("hijacked", wr.hijacked))
+		}()
 		defer func() {
 			err := recover()
 			if err == nil {
 				return
 			}
-
-			if err, ok := err.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-				// Handle the abort gracefully
-				return
+			aborted = true
+			if err == http.ErrAbortHandler {
+				panic(http.ErrAbortHandler) // Let net/http close the connection or reset the HTTP/2 stream.
 			}
-
 			stack := make([]byte, 1024)
 			n := runtime.Stack(stack, true)
-
 			log.ErrorContext(r.Context(), "panic!",
 				slog.Any("error", err),
 				slog.String("stack", string(stack[:n])),
@@ -194,14 +189,11 @@ func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 				slog.String("path", r.URL.Path),
 				slog.String("query", r.URL.RawQuery),
 				slog.String("ip", r.RemoteAddr))
-
-			if wr.status > 0 {
-				// response was already sent, nothing we can do
-				return
+			if wr.committed() || wr.hijacked {
+				panic(http.ErrAbortHandler) // A partial response cannot be replaced or completed safely.
 			}
-
-			// send error response
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			http.Error(&wr, "internal server error", http.StatusInternalServerError)
+			aborted = false
 		}()
 		next.ServeHTTP(&wr, r)
 	}
@@ -210,21 +202,71 @@ func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 // responseRecorder wraps [http.ResponseWriter] to record status and bytes written.
 type responseRecorder struct {
 	http.ResponseWriter
-	status   int
+	status   int // Zero means unwritten; 1xx except 101 is informational.
 	numBytes int
+	hijacked bool
 }
 
-// Write records bytes and implicit 200 status.
+// Write records bytes accepted by the writer and the implicit final 200 status.
 func (re *responseRecorder) Write(b []byte) (int, error) {
-	if re.status == 0 { // mirror net/http's implicit 200 on first Write
-		re.status = http.StatusOK
+	if !re.hijacked && !re.committed() {
+		re.status = http.StatusOK // Leave implicit header handling, including content sniffing, to Write.
 	}
-	re.numBytes += len(b)
-	return re.ResponseWriter.Write(b)
+	n, err := re.ResponseWriter.Write(b)
+	re.numBytes += n
+	return n, err
 }
 
-// WriteHeader records the status code.
+// WriteHeader remembers the last informational header or the first final header.
 func (re *responseRecorder) WriteHeader(statusCode int) {
-	re.status = statusCode
+	if re.hijacked || re.committed() {
+		return
+	}
 	re.ResponseWriter.WriteHeader(statusCode)
+	re.status = statusCode
+}
+
+// Unwrap preserves ResponseController operations such as pprof's write deadline.
+func (re *responseRecorder) Unwrap() http.ResponseWriter {
+	return re.ResponseWriter
+}
+
+// Flush preserves the Flusher interface for streaming handlers.
+func (re *responseRecorder) Flush() {
+	_ = re.FlushError()
+}
+
+// FlushError intercepts flushes because a supported flush commits an implicit 200,
+// even when flushing buffered data fails. An unsupported flush commits nothing.
+func (re *responseRecorder) FlushError() error {
+	w := re.ResponseWriter
+	for {
+		switch f := w.(type) {
+		case interface{ FlushError() error }, http.Flusher:
+			if !re.hijacked && !re.committed() {
+				re.WriteHeader(http.StatusOK)
+			}
+			return http.NewResponseController(w).Flush()
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = f.Unwrap()
+		default:
+			return http.ErrNotSupported
+		}
+	}
+}
+
+// Hijack transfers ownership of the connection; subsequent raw writes cannot be
+// counted as HTTP response bytes, and net/http will not supply an implicit 200.
+func (re *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(re.ResponseWriter).Hijack()
+	if err == nil {
+		re.hijacked = true
+	}
+	return conn, rw, err
+}
+
+// committed reports whether a final status has been accepted. Other 1xx headers
+// are informational; 101 switches protocols and is final in net/http.
+func (re *responseRecorder) committed() bool {
+	return re.status >= 200 || re.status == http.StatusSwitchingProtocols
 }
