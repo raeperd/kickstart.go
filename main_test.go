@@ -195,22 +195,22 @@ func TestRequestOutcomes(t *testing.T) {
 			informational: []int{http.StatusEarlyHints},
 		},
 		{
-			name: "controller capabilities and direct flush",
+			name: "write deadline without connection takeover",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				controller := http.NewResponseController(w)
-				if err := controller.SetReadDeadline(time.Now().Add(time.Minute)); err != nil {
-					panic(err)
-				}
 				if err := controller.SetWriteDeadline(time.Now().Add(time.Minute)); err != nil {
 					panic(err)
 				}
-				if err := controller.EnableFullDuplex(); err != nil {
-					panic(err)
+				conn, _, err := controller.Hijack()
+				if conn != nil {
+					_ = conn.Close()
 				}
-				w.(http.Flusher).Flush()
-				w.WriteHeader(http.StatusInternalServerError)
+				if !errors.Is(err, http.ErrNotSupported) {
+					panic("connection takeover should be unsupported")
+				}
+				w.WriteHeader(http.StatusCreated)
 			},
-			status: http.StatusOK,
+			status: http.StatusCreated,
 		},
 		{
 			name: "flush commits implicit status",
@@ -373,16 +373,18 @@ func TestRequestOutcomes(t *testing.T) {
 	}
 }
 
-func TestRequestOutcomesHTTP2Informational(t *testing.T) {
+func TestRequestOutcomesInformationalProtocols(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name    string
-		handler http.HandlerFunc
-		status  int
-		body    string
+		name       string
+		protoMajor int
+		handler    http.HandlerFunc
+		status     int
+		body       string
 	}{
 		{
-			name: "explicit final status",
+			name:       "HTTP2 explicit final status",
+			protoMajor: 2,
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusCreated)
 				_, _ = io.WriteString(w, "created")
@@ -391,15 +393,23 @@ func TestRequestOutcomesHTTP2Informational(t *testing.T) {
 			body:   "created",
 		},
 		{
-			name:    "implicit final status",
-			handler: func(http.ResponseWriter, *http.Request) {},
-			status:  http.StatusOK,
+			name:       "HTTP2 implicit final status",
+			protoMajor: 2,
+			handler:    func(http.ResponseWriter, *http.Request) {},
+			status:     http.StatusOK,
 		},
 		{
-			name:    "recovered panic",
-			handler: func(http.ResponseWriter, *http.Request) { panic("private panic details") },
-			status:  http.StatusInternalServerError,
-			body:    "internal server error\n",
+			name:       "HTTP2 recovered panic",
+			protoMajor: 2,
+			handler:    func(http.ResponseWriter, *http.Request) { panic("private panic details") },
+			status:     http.StatusInternalServerError,
+			body:       "internal server error\n",
+		},
+		{
+			name:       "HTTP1 switching protocols is final",
+			protoMajor: 1,
+			handler:    func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) },
+			status:     http.StatusSwitchingProtocols,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -410,7 +420,7 @@ func TestRequestOutcomesHTTP2Informational(t *testing.T) {
 				tt.handler.ServeHTTP(w, r)
 			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
 			server := httptest.NewUnstartedServer(handler)
-			server.EnableHTTP2 = true
+			server.EnableHTTP2 = tt.protoMajor == 2
 			server.StartTLS()
 			t.Cleanup(server.Close)
 			server.Client().Timeout = 5 * time.Second
@@ -426,10 +436,14 @@ func TestRequestOutcomesHTTP2Informational(t *testing.T) {
 			body, err := io.ReadAll(res.Body)
 			testNil(t, res.Body.Close())
 			testNil(t, err)
-			testEqual(t, 2, res.ProtoMajor)
+			testEqual(t, tt.protoMajor, res.ProtoMajor)
 			testEqual(t, tt.status, res.StatusCode)
 			testEqual(t, tt.body, string(body))
-			testEqual(t, true, slices.Equal([]int{http.StatusSwitchingProtocols}, informational))
+			if tt.protoMajor == 2 {
+				testEqual(t, true, slices.Equal([]int{http.StatusSwitchingProtocols}, informational))
+			} else {
+				testEqual(t, 0, len(informational))
+			}
 			server.Close()
 			decoder := json.NewDecoder(&buffer)
 			accesses := 0
@@ -515,59 +529,6 @@ func TestRootHTTPHandlerRoutes(t *testing.T) {
 	}
 }
 
-func TestRequestOutcomesHijack(t *testing.T) {
-	t.Parallel()
-	for _, upgrade := range []bool{false, true} {
-		t.Run(strconv.FormatBool(upgrade), func(t *testing.T) {
-			t.Parallel()
-			var buffer bytes.Buffer
-			done := make(chan struct{})
-			handler := requestOutcomes(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				if upgrade {
-					w.WriteHeader(http.StatusSwitchingProtocols)
-					w.WriteHeader(http.StatusInternalServerError)
-				}
-				conn, rw, err := http.NewResponseController(w).Hijack()
-				if err != nil {
-					panic(err)
-				}
-				defer conn.Close() //nolint:errcheck
-				if !upgrade {
-					_, _ = rw.WriteString("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
-				}
-				if err := rw.Flush(); err != nil {
-					panic(err)
-				}
-			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				defer close(done) // Server.Close does not wait for hijacked connections.
-				handler.ServeHTTP(w, r)
-			}))
-			t.Cleanup(server.Close)
-			server.Client().Timeout = 5 * time.Second
-			res, err := server.Client().Get(server.URL)
-			testNil(t, err)
-			testNil(t, res.Body.Close())
-			<-done
-			var record struct {
-				Status   int  `json:"status"`
-				Bytes    int  `json:"bytes"`
-				Hijacked bool `json:"hijacked"`
-			}
-			testNil(t, json.NewDecoder(&buffer).Decode(&record))
-			if upgrade {
-				testEqual(t, http.StatusSwitchingProtocols, res.StatusCode)
-				testEqual(t, http.StatusSwitchingProtocols, record.Status)
-			} else {
-				testEqual(t, http.StatusAccepted, res.StatusCode)
-				testEqual(t, 0, record.Status) // Raw connection writes are outside HTTP response accounting.
-			}
-			testEqual(t, 0, record.Bytes)
-			testEqual(t, true, record.Hijacked)
-		})
-	}
-}
-
 // Writer failures are exercised directly because a real connection cannot reliably
 // force a particular short write or flush error.
 func TestResponseRecorderWriteFailures(t *testing.T) {
@@ -616,7 +577,7 @@ func TestResponseRecorderFlushFailures(t *testing.T) {
 	t.Run("failed flush still commits", func(t *testing.T) {
 		t.Parallel()
 		underlying := httptest.NewRecorder()
-		recorder := responseRecorder{ResponseWriter: unwrapWriter{flushFailure{underlying}}}
+		recorder := responseRecorder{ResponseWriter: flushFailure{underlying}}
 		err := http.NewResponseController(&recorder).Flush()
 		testEqual(t, io.ErrClosedPipe, err)
 		recorder.WriteHeader(http.StatusInternalServerError)
@@ -625,13 +586,12 @@ func TestResponseRecorderFlushFailures(t *testing.T) {
 	})
 }
 
-type unwrapWriter struct{ http.ResponseWriter }
-
-func (w unwrapWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-
 type flushFailure struct{ http.ResponseWriter }
 
-func (flushFailure) FlushError() error { return io.ErrClosedPipe }
+func (w flushFailure) FlushError() error {
+	w.WriteHeader(http.StatusOK)
+	return io.ErrClosedPipe
+}
 
 func testEqual[T comparable](tb testing.TB, want, got T) {
 	tb.Helper()

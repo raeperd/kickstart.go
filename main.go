@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,12 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
 	"os/signal"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"syscall"
@@ -157,7 +154,7 @@ func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 		wr := responseRecorder{ResponseWriter: w, protoMajor: r.ProtoMajor}
 		aborted := false
 		defer func() {
-			if !aborted && !wr.hijacked && !wr.committed() {
+			if !aborted && !wr.committed() {
 				wr.status = http.StatusOK // net/http sends 200 when the handler returns without a final header.
 			}
 			log.InfoContext(r.Context(), "accessed",
@@ -168,8 +165,7 @@ func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 				slog.String("ip", r.RemoteAddr),
 				slog.Int("status", wr.status),
 				slog.Int("bytes", wr.numBytes),
-				slog.Bool("aborted", aborted),
-				slog.Bool("hijacked", wr.hijacked))
+				slog.Bool("aborted", aborted))
 		}()
 		defer func() {
 			err := recover()
@@ -180,16 +176,14 @@ func requestOutcomes(next http.Handler, log *slog.Logger) http.HandlerFunc {
 			if err == http.ErrAbortHandler {
 				panic(http.ErrAbortHandler) // Let net/http close the connection or reset the HTTP/2 stream.
 			}
-			stack := make([]byte, 1024)
-			n := runtime.Stack(stack, true)
 			log.ErrorContext(r.Context(), "panic!",
 				slog.Any("error", err),
-				slog.String("stack", string(stack[:n])),
+				slog.String("stack", string(debug.Stack())),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.String("query", r.URL.RawQuery),
 				slog.String("ip", r.RemoteAddr))
-			if wr.committed() || wr.hijacked {
+			if wr.committed() {
 				panic(http.ErrAbortHandler) // A partial response cannot be replaced or completed safely.
 			}
 			http.Error(&wr, "internal server error", http.StatusInternalServerError)
@@ -205,12 +199,11 @@ type responseRecorder struct {
 	status     int // Zero means unwritten; 1xx is informational except HTTP/1.x 101.
 	protoMajor int
 	numBytes   int
-	hijacked   bool
 }
 
 // Write records bytes accepted by the writer and the implicit final 200 status.
 func (re *responseRecorder) Write(b []byte) (int, error) {
-	if !re.hijacked && !re.committed() {
+	if !re.committed() {
 		re.status = http.StatusOK // Leave implicit header handling, including content sniffing, to Write.
 	}
 	n, err := re.ResponseWriter.Write(b)
@@ -220,50 +213,26 @@ func (re *responseRecorder) Write(b []byte) (int, error) {
 
 // WriteHeader remembers the last informational header or the first final header.
 func (re *responseRecorder) WriteHeader(statusCode int) {
-	if re.hijacked || re.committed() {
+	if re.committed() {
 		return
 	}
 	re.ResponseWriter.WriteHeader(statusCode)
 	re.status = statusCode
 }
 
-// Unwrap preserves ResponseController operations such as pprof's write deadline.
-func (re *responseRecorder) Unwrap() http.ResponseWriter {
-	return re.ResponseWriter
-}
-
-// Flush preserves the Flusher interface for streaming handlers.
-func (re *responseRecorder) Flush() {
-	_ = re.FlushError()
-}
-
-// FlushError intercepts flushes because a supported flush commits an implicit 200,
-// even when flushing buffered data fails. An unsupported flush commits nothing.
+// FlushError records net/http's implicit 200 even if flushing buffered data fails.
 func (re *responseRecorder) FlushError() error {
-	w := re.ResponseWriter
-	for {
-		switch f := w.(type) {
-		case interface{ FlushError() error }, http.Flusher:
-			if !re.hijacked && !re.committed() {
-				re.WriteHeader(http.StatusOK)
-			}
-			return http.NewResponseController(w).Flush()
-		case interface{ Unwrap() http.ResponseWriter }:
-			w = f.Unwrap()
-		default:
-			return http.ErrNotSupported
-		}
+	err := http.NewResponseController(re.ResponseWriter).Flush()
+	if !errors.Is(err, http.ErrNotSupported) && !re.committed() {
+		re.status = http.StatusOK
 	}
+	return err
 }
 
-// Hijack transfers ownership of the connection; subsequent raw writes cannot be
-// counted as HTTP response bytes, and net/http will not supply an implicit 200.
-func (re *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	conn, rw, err := http.NewResponseController(re.ResponseWriter).Hijack()
-	if err == nil {
-		re.hijacked = true
-	}
-	return conn, rw, err
+// SetWriteDeadline supports pprof's deadline extension without exposing Unwrap,
+// which would also allow connection takeover to bypass response accounting.
+func (re *responseRecorder) SetWriteDeadline(deadline time.Time) error {
+	return http.NewResponseController(re.ResponseWriter).SetWriteDeadline(deadline)
 }
 
 // committed reports whether a final status has been accepted. net/http treats
