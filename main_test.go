@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,56 +14,43 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// TestMain starts a real server for integration tests.
+// TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
-	port := func() string { // Get a free port to run the server
-		listener, err := net.Listen("tcp", ":0")
-		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-		defer listener.Close() //nolint:errcheck
-		addr := listener.Addr().(*net.TCPAddr)
-		return strconv.Itoa(addr.Port)
-	}()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() { // Start the server in a goroutine
-		getenv := func(key string) string {
-			if key == "PORT" {
-				return port
-			}
-			return ""
-		}
-		if err := run(ctx, os.Stdout, getenv, "vtest"); err != nil {
-			cancel()
-			log.Fatal(err)
-		}
-	}()
-
-	endpoint = "http://localhost:" + port
-
-	start := time.Now() // wait for server to be healthy before tests.
-	for time.Since(start) < 3*time.Second {
-		if res, err := http.Get(endpoint + "/health"); err == nil && res.StatusCode == http.StatusOK {
-			_ = res.Body.Close()
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
+	endpoint = "http://" + listener.Addr().String()
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	server := &http.Server{
+		Handler:           newRootHTTPHandler(log, "vtest"),
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, server, listener, log, 10*time.Second) }()
 
+	// The listener is already bound; requests can connect while Serve starts.
 	exitCode := m.Run()
 	cancel()
+	if err := <-done; err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exitCode = 1
+	}
 	os.Exit(exitCode)
 }
 
 // endpoint is set by TestMain; do not modify.
 var endpoint string
 
-// TestGetHealth tests the /health endpoint against the real server.
+// TestGetHealth tests the /health endpoint against the shared server.
 func TestGetHealth(t *testing.T) {
 	t.Parallel()
 	type response struct {
@@ -73,12 +61,11 @@ func TestGetHealth(t *testing.T) {
 		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
-	res, err := http.Get(endpoint + "/health")
+	client := &http.Client{Timeout: 3 * time.Second}
+	t.Cleanup(client.CloseIdleConnections)
+	res, err := client.Get(endpoint + "/health")
 	testNil(t, err)
-	t.Cleanup(func() {
-		err = res.Body.Close()
-		testNil(t, err)
-	})
+	t.Cleanup(func() { testNil(t, res.Body.Close()) })
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
 
@@ -117,6 +104,170 @@ func TestRunPort(t *testing.T) {
 				t.Fatal("expected error for invalid PORT")
 			}
 			testContains(t, "invalid PORT", err.Error())
+		})
+	}
+}
+
+// TestRunBindError verifies a failed bind cannot report successful startup or change global logging.
+func TestRunBindError(t *testing.T) {
+	listener, err := net.Listen("tcp", ":0")
+	testNil(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	getenv := func(string) string { return port }
+	var logs bytes.Buffer
+	defaultLogger := slog.Default()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	err = run(ctx, &logs, getenv, "vtest")
+	if err == nil {
+		t.Fatal("expected bind error for occupied port")
+	}
+	if strings.Contains(logs.String(), "server started") {
+		t.Fatalf("failed bind reported successful startup: %s", &logs)
+	}
+	testEqual(t, defaultLogger, slog.Default())
+}
+
+// TestServeShutdown verifies cancellation drains requests, or closes them on timeout.
+func TestServeShutdown(t *testing.T) {
+	t.Parallel()
+	for _, timeout := range []time.Duration{3 * time.Second, time.Millisecond} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			t.Parallel()
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			testNil(t, err)
+			t.Cleanup(func() { _ = listener.Close() })
+
+			started := make(chan struct{})
+			release := make(chan struct{})
+			releaseRequest := sync.OnceFunc(func() { close(release) })
+			finished := make(chan struct{})
+			server := &http.Server{
+				ReadHeaderTimeout: time.Second,
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer close(finished)
+					close(started)
+					select {
+					case <-release:
+						_, _ = io.WriteString(w, "finished")
+					case <-r.Context().Done():
+					}
+				}),
+			}
+			shuttingDown := make(chan struct{})
+			server.RegisterOnShutdown(func() { close(shuttingDown) })
+			ctx, cancel := context.WithCancelCause(t.Context())
+			var logs bytes.Buffer
+			log := slog.New(slog.NewJSONHandler(&logs, nil))
+			done := make(chan error, 1)
+			go func() {
+				done <- serve(ctx, server, listener, log, timeout)
+				close(done)
+			}()
+			t.Cleanup(func() {
+				cancel(nil)
+				releaseRequest()
+				_ = server.Close()
+				_ = testReceive(t, done)
+			})
+
+			client := &http.Client{Timeout: 3 * time.Second}
+			t.Cleanup(client.CloseIdleConnections)
+			response := make(chan error, 1)
+			go func() {
+				defer close(response)
+				res, err := client.Get("http://" + listener.Addr().String())
+				if err != nil {
+					response <- err
+					return
+				}
+				defer res.Body.Close() //nolint:errcheck
+				body, err := io.ReadAll(res.Body)
+				if err == nil && (res.StatusCode != http.StatusOK || string(body) != "finished") {
+					err = fmt.Errorf("unexpected response: %d %q", res.StatusCode, body)
+				}
+				response <- err
+			}()
+			t.Cleanup(func() {
+				releaseRequest()
+				_ = testReceive(t, response)
+			})
+
+			testReceive(t, started)
+			cause := errors.New("test shutdown")
+			cancel(cause)
+			testReceive(t, shuttingDown)
+			if timeout == 3*time.Second {
+				select {
+				case err := <-done:
+					t.Fatalf("serve returned before the request finished: %v", err)
+				default:
+				}
+				releaseRequest()
+				testNil(t, testReceive(t, response))
+				testNil(t, testReceive(t, done))
+			} else {
+				err := testReceive(t, done)
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("expected shutdown deadline, got %v", err)
+				}
+				testContains(t, "server shutdown:", err.Error())
+				if err := testReceive(t, response); err == nil || errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("expected connection closure before the client deadline, got %v", err)
+				}
+			}
+			testReceive(t, finished)
+			testContains(t, "shutting down server", logs.String())
+			testContains(t, cause.Error(), logs.String())
+			conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+			if err == nil {
+				_ = conn.Close()
+				t.Fatal("listener still accepts connections after completion")
+			}
+		})
+	}
+}
+
+// TestServeCompletion covers cancellation before serving and an unexpected accept error.
+func TestServeCompletion(t *testing.T) {
+	t.Parallel()
+	for _, canceled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("canceled=%t", canceled), func(t *testing.T) {
+			t.Parallel()
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			testNil(t, err)
+			t.Cleanup(func() { _ = listener.Close() })
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if canceled {
+				cancel()
+			} else {
+				testNil(t, listener.Close())
+			}
+			server := &http.Server{ReadHeaderTimeout: time.Second}
+			log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+			done := make(chan error, 1)
+			go func() {
+				done <- serve(ctx, server, listener, log, time.Second)
+				close(done)
+			}()
+			t.Cleanup(func() {
+				cancel()
+				_ = server.Close()
+				_ = testReceive(t, done)
+			})
+			err = testReceive(t, done)
+			if canceled {
+				testNil(t, err)
+				conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+				if err == nil {
+					_ = conn.Close()
+					t.Fatal("cancellation before serving left the listener open")
+				}
+			} else if !errors.Is(err, net.ErrClosed) {
+				t.Fatalf("expected closed listener error, got %v", err)
+			}
 		})
 	}
 }
@@ -249,5 +400,18 @@ func testContains(tb testing.TB, needle string, haystack string) {
 	tb.Helper()
 	if !strings.Contains(haystack, needle) {
 		tb.Fatalf("%q not in %q", needle, haystack)
+	}
+}
+
+// testReceive bounds waits for lifecycle events and goroutine completion.
+func testReceive[T any](tb testing.TB, ch <-chan T) T {
+	tb.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-time.After(5 * time.Second):
+		tb.Fatal("timed out waiting for server lifecycle event")
+		var zero T
+		return zero
 	}
 }
