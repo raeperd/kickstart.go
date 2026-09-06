@@ -26,6 +26,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
+	// Avoid defer: os.Exit skips it on error, which gocritic flags.
 	cancel()
 }
 
