@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -20,7 +21,10 @@ import (
 )
 
 func main() {
-	if err := run(context.Background(), os.Stdout, os.Getenv, Version); err != nil {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	err := run(ctx, os.Stdout, os.Getenv, Version)
+	cancel()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
@@ -29,7 +33,7 @@ func main() {
 // Version is set at build time via ldflags (e.g., -X main.Version=v1.0.0).
 var Version string
 
-// run starts the [http.Server] and blocks until shutdown via OS signal.
+// run binds the configured port and blocks until serving and shutdown complete.
 // Dependencies are injected as parameters for testability.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
 func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
@@ -42,41 +46,53 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 		}
 	}
 
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	// Initialize resources here
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
+	log := slog.New(slog.NewJSONHandler(w, nil))
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           newRootHTTPHandler(slog.Default(), version),
+		Handler:           newRootHTTPHandler(log, version),
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	errChan := make(chan error, 1)
-	go func() {
-		slog.InfoContext(ctx, "server started", slog.Uint64("port", port), slog.String("version", version))
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errChan <- err
-		}
-	}()
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
+	}
+	log.InfoContext(ctx, "server started", slog.Uint64("port", port), slog.String("version", version))
+	return serve(ctx, server, listener, log, 10*time.Second)
+}
+
+// serve owns listener and blocks until serving and graceful shutdown complete.
+// On a shutdown timeout, remaining connections are closed before returning.
+func serve(ctx context.Context, server *http.Server, listener net.Listener, log *slog.Logger, shutdownTimeout time.Duration) error {
+	defer listener.Close() //nolint:errcheck // Also close when cancellation precedes Serve.
+	defer server.Close()   //nolint:errcheck // Close remaining connections on any exit.
+
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
 
 	select {
-	case err := <-errChan:
+	case err := <-served:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
 		return err
 	case <-ctx.Done():
-		slog.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
-
-		// Create a new context for shutdown with timeout
-		ctx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-
-		if err := server.Shutdown(ctx); err != nil {
+		log.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		err := server.Shutdown(shutdownCtx)
+		serveErr := <-served
+		if err != nil {
 			return fmt.Errorf("server shutdown: %w", err)
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			return serveErr
 		}
 
 		// Cleanup resources here, in reverse order of initialization
