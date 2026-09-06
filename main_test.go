@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +19,38 @@ import (
 	"time"
 )
 
-// TestGetHealth tests the /health endpoint through the root handler.
+// TestMain provides one real server for integration tests and waits for its shutdown.
+func TestMain(m *testing.M) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	endpoint = "http://" + listener.Addr().String()
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	server := &http.Server{
+		Handler:           newRootHTTPHandler(log, "vtest"),
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, server, listener, log, 10*time.Second) }()
+
+	// The listener is already bound; requests can connect while Serve starts.
+	exitCode := m.Run()
+	cancel()
+	if err := <-done; err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exitCode = 1
+	}
+	os.Exit(exitCode)
+}
+
+// endpoint is set by TestMain; do not modify.
+var endpoint string
+
+// TestGetHealth tests the /health endpoint against the shared server.
 func TestGetHealth(t *testing.T) {
 	t.Parallel()
 	type response struct {
@@ -29,10 +61,10 @@ func TestGetHealth(t *testing.T) {
 		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
-	handler := newRootHTTPHandler(slog.New(slog.NewJSONHandler(io.Discard, nil)), "vtest")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
-	res := rec.Result()
+	client := &http.Client{Timeout: 3 * time.Second}
+	t.Cleanup(client.CloseIdleConnections)
+	res, err := client.Get(endpoint + "/health")
+	testNil(t, err)
 	t.Cleanup(func() { testNil(t, res.Body.Close()) })
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
