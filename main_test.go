@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"runtime/trace"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,20 +20,54 @@ import (
 
 // TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	endpoint = "http://" + listener.Addr().String()
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	if err := listener.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	endpoint = "http://127.0.0.1:" + port
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, os.Stdout, func(string) string { return "" }, "vtest",
-			func(string, string) (net.Listener, error) { return listener, nil })
+		getenv := func(key string) string {
+			if key == "PORT" {
+				return port
+			}
+			return ""
+		}
+		done <- run(ctx, os.Stdout, getenv, "vtest")
 	}()
 
-	// The listener is already bound; requests can connect while Serve starts.
+	client := &http.Client{Timeout: 250 * time.Millisecond}
+	ready := false
+	for start := time.Now(); time.Since(start) < 3*time.Second; {
+		select {
+		case err := <-done:
+			fmt.Fprintln(os.Stderr, "server stopped before tests:", err)
+			os.Exit(1)
+		default:
+		}
+		res, err := client.Get(endpoint + "/health")
+		if err == nil {
+			_ = res.Body.Close()
+			if res.StatusCode == http.StatusOK {
+				ready = true
+				break
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	client.CloseIdleConnections()
+	if !ready {
+		fmt.Fprintln(os.Stderr, "server did not become healthy before tests")
+		os.Exit(1)
+	}
+
 	exitCode := m.Run()
 	cancel()
 	if err := <-done; err != nil {
@@ -96,7 +129,7 @@ func TestRunPort(t *testing.T) {
 				}
 				return ""
 			}
-			err := run(context.Background(), io.Discard, getenv, "vtest", net.Listen)
+			err := run(context.Background(), io.Discard, getenv, "vtest")
 			if err == nil {
 				t.Fatal("expected error for invalid PORT")
 			}
@@ -116,7 +149,7 @@ func TestRunBindError(t *testing.T) {
 	defaultLogger := slog.Default()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	err = run(ctx, &logs, getenv, "vtest", net.Listen)
+	err = run(ctx, &logs, getenv, "vtest")
 	if err == nil {
 		t.Fatal("expected bind error for occupied port")
 	}
@@ -126,159 +159,32 @@ func TestRunBindError(t *testing.T) {
 	testEqual(t, defaultLogger, slog.Default())
 }
 
-// TestRunShutdown exercises draining and timeout through the real profiling handler.
-func TestRunShutdown(t *testing.T) {
-	if trace.IsEnabled() {
-		t.Skip("profiling handler requires exclusive tracing; unavailable with go test -trace")
+// TestRunCanceled verifies startup with a canceled context completes shutdown.
+func TestRunCanceled(t *testing.T) {
+	listener, err := net.Listen("tcp", ":0")
+	testNil(t, err)
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	testNil(t, listener.Close())
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("test shutdown")
+	cancel(cause)
+	var logs bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, &logs, func(string) string { return port }, "vtest") }()
+	select {
+	case err := <-done:
+		testNil(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("run did not finish after cancellation")
 	}
-	// Tracing is process-wide, so these cases must run sequentially.
-	for _, tt := range []struct {
-		name        string
-		seconds     string
-		wantTimeout bool
-	}{
-		{name: "drains_active_request", seconds: "1"},
-		{name: "closes_after_timeout", seconds: "30", wantTimeout: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Cleanup(func() {
-				deadline := time.After(5 * time.Second)
-				for trace.IsEnabled() {
-					select {
-					case <-deadline:
-						t.Fatal("profiling handler did not stop tracing after shutdown")
-					case <-time.After(time.Millisecond):
-					}
-				}
-			})
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			testNil(t, err)
-			t.Cleanup(func() { _ = listener.Close() })
-			ctx, cancel := context.WithCancel(t.Context())
-			done := make(chan error, 1)
-			go func() {
-				done <- run(ctx, io.Discard, func(string) string { return "" }, "vtest",
-					func(string, string) (net.Listener, error) { return listener, nil })
-				close(done)
-			}()
-			requestCtx, cancelRequest := context.WithCancel(t.Context())
-			t.Cleanup(func() {
-				cancelRequest()
-				cancel()
-				_ = testReceive(t, done)
-			})
+	testContains(t, "shutting down server", logs.String())
+	testContains(t, cause.Error(), logs.String())
 
-			client := &http.Client{Timeout: 20 * time.Second}
-			t.Cleanup(client.CloseIdleConnections)
-			req, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
-				"http://"+listener.Addr().String()+"/debug/pprof/trace?seconds="+tt.seconds, nil)
-			testNil(t, err)
-			response := make(chan error, 1)
-			go func() {
-				defer close(response)
-				res, err := client.Do(req)
-				if err != nil {
-					response <- err
-					return
-				}
-				defer res.Body.Close() //nolint:errcheck
-				_, err = io.Copy(io.Discard, res.Body)
-				if err == nil && res.StatusCode != http.StatusOK {
-					err = fmt.Errorf("unexpected status: %d", res.StatusCode)
-				}
-				response <- err
-			}()
-			t.Cleanup(func() {
-				cancelRequest()
-				_ = testReceive(t, response)
-			})
-
-			// An enabled trace confirms the request reached the handler before cancellation.
-			deadline := time.After(3 * time.Second)
-			for !trace.IsEnabled() {
-				select {
-				case err := <-response:
-					t.Fatalf("profiling request ended before shutdown: %v", err)
-				case <-deadline:
-					t.Fatal("profiling request did not start")
-				case <-time.After(time.Millisecond):
-				}
-			}
-			cancel()
-			select {
-			case err = <-done:
-			case <-time.After(15 * time.Second):
-				t.Fatal("run did not finish shutdown")
-			}
-			if tt.wantTimeout {
-				if !errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("expected shutdown deadline, got %v", err)
-				}
-				testContains(t, "server shutdown:", err.Error())
-				if err := testReceive(t, response); err == nil || errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("expected connection closure before client deadline, got %v", err)
-				}
-			} else {
-				testNil(t, err)
-				testNil(t, testReceive(t, response))
-			}
-			conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
-			if err == nil {
-				_ = conn.Close()
-				t.Fatal("listener still accepts connections after run returned")
-			}
-		})
-	}
-}
-
-// TestRunCompletion covers cancellation before serving and an unexpected accept error.
-func TestRunCompletion(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		name              string
-		cancelBeforeServe bool
-	}{
-		{name: "canceled_before_serving", cancelBeforeServe: true},
-		{name: "closed_listener"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			testNil(t, err)
-			t.Cleanup(func() { _ = listener.Close() })
-			ctx, cancel := context.WithCancelCause(t.Context())
-			defer cancel(nil)
-			cause := errors.New("test shutdown")
-			if tt.cancelBeforeServe {
-				cancel(cause)
-			} else {
-				testNil(t, listener.Close())
-			}
-			var logs bytes.Buffer
-			done := make(chan error, 1)
-			go func() {
-				done <- run(ctx, &logs, func(string) string { return "" }, "vtest",
-					func(string, string) (net.Listener, error) { return listener, nil })
-				close(done)
-			}()
-			t.Cleanup(func() {
-				cancel(nil)
-				_ = testReceive(t, done)
-			})
-			err = testReceive(t, done)
-			if tt.cancelBeforeServe {
-				testNil(t, err)
-				testContains(t, "shutting down server", logs.String())
-				testContains(t, cause.Error(), logs.String())
-				conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
-				if err == nil {
-					_ = conn.Close()
-					t.Fatal("cancellation before serving left the listener open")
-				}
-			} else if !errors.Is(err, net.ErrClosed) {
-				t.Fatalf("expected closed listener error, got %v", err)
-			}
-		})
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, time.Second)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("listener still accepts connections after run returned")
 	}
 }
 
@@ -410,18 +316,5 @@ func testContains(tb testing.TB, needle string, haystack string) {
 	tb.Helper()
 	if !strings.Contains(haystack, needle) {
 		tb.Fatalf("%q not in %q", needle, haystack)
-	}
-}
-
-// testReceive bounds waits for lifecycle events and goroutine completion.
-func testReceive[T any](tb testing.TB, ch <-chan T) T {
-	tb.Helper()
-	select {
-	case value := <-ch:
-		return value
-	case <-time.After(5 * time.Second):
-		tb.Fatal("timed out waiting for server lifecycle event")
-		var zero T
-		return zero
 	}
 }

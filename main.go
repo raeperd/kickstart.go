@@ -22,7 +22,7 @@ import (
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	if err := run(ctx, os.Stdout, os.Getenv, Version, net.Listen); err != nil {
+	if err := run(ctx, os.Stdout, os.Getenv, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
@@ -35,7 +35,7 @@ var Version string
 // run binds the configured port and blocks until serving and shutdown complete.
 // Dependencies are injected as parameters for testability.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
-func run(ctx context.Context, w io.Writer, getenv func(string) string, version string, listen func(string, string) (net.Listener, error)) error {
+func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
 	port := uint64(8080)
 	if p := getenv("PORT"); p != "" {
 		var err error
@@ -58,7 +58,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 		IdleTimeout:       60 * time.Second,
 	}
 
-	listener, err := listen("tcp", server.Addr)
+	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
 		return err
 	}
