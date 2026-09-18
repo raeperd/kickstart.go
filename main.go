@@ -22,7 +22,7 @@ import (
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	if err := run(ctx, os.Stdout, os.Getenv, Version); err != nil {
+	if err := run(ctx, os.Stdout, os.Getenv, Version, net.Listen); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
@@ -35,7 +35,7 @@ var Version string
 // run binds the configured port and blocks until serving and shutdown complete.
 // Dependencies are injected as parameters for testability.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
-func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
+func run(ctx context.Context, w io.Writer, getenv func(string) string, version string, listen func(string, string) (net.Listener, error)) error {
 	port := uint64(8080)
 	if p := getenv("PORT"); p != "" {
 		var err error
@@ -58,17 +58,11 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 		IdleTimeout:       60 * time.Second,
 	}
 
-	listener, err := net.Listen("tcp", server.Addr)
+	listener, err := listen("tcp", server.Addr)
 	if err != nil {
 		return err
 	}
 	log.InfoContext(ctx, "server started", slog.Uint64("port", port), slog.String("version", version))
-	return serve(ctx, server, listener, log, 10*time.Second)
-}
-
-// serve owns listener and blocks until serving and graceful shutdown complete.
-// On a shutdown timeout, remaining connections are closed before returning.
-func serve(ctx context.Context, server *http.Server, listener net.Listener, log *slog.Logger, shutdownTimeout time.Duration) error {
 	defer server.Close() //nolint:errcheck // Close remaining connections on any exit.
 
 	served := make(chan error, 1)
@@ -85,7 +79,7 @@ func serve(ctx context.Context, server *http.Server, listener net.Listener, log 
 		return err
 	case <-ctx.Done():
 		log.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		err := server.Shutdown(shutdownCtx)
 		serveErr := <-served

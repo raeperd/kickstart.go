@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime/trace"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -27,15 +27,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	endpoint = "http://" + listener.Addr().String()
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	server := &http.Server{
-		Handler:           newRootHTTPHandler(log, "vtest"),
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, server, listener, log, 10*time.Second) }()
+	go func() {
+		done <- run(ctx, os.Stdout, func(string) string { return "" }, "vtest",
+			func(string, string) (net.Listener, error) { return listener, nil })
+	}()
 
 	// The listener is already bound; requests can connect while Serve starts.
 	exitCode := m.Run()
@@ -99,7 +96,7 @@ func TestRunPort(t *testing.T) {
 				}
 				return ""
 			}
-			err := run(context.Background(), io.Discard, getenv, "vtest")
+			err := run(context.Background(), io.Discard, getenv, "vtest", net.Listen)
 			if err == nil {
 				t.Fatal("expected error for invalid PORT")
 			}
@@ -119,7 +116,7 @@ func TestRunBindError(t *testing.T) {
 	defaultLogger := slog.Default()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	err = run(ctx, &logs, getenv, "vtest")
+	err = run(ctx, &logs, getenv, "vtest", net.Listen)
 	if err == nil {
 		t.Fatal("expected bind error for occupied port")
 	}
@@ -129,115 +126,113 @@ func TestRunBindError(t *testing.T) {
 	testEqual(t, defaultLogger, slog.Default())
 }
 
-// TestServeShutdown verifies cancellation drains requests, or closes them on timeout.
-func TestServeShutdown(t *testing.T) {
-	t.Parallel()
+// TestRunShutdown exercises draining and timeout through the real profiling handler.
+func TestRunShutdown(t *testing.T) {
+	if trace.IsEnabled() {
+		t.Skip("profiling handler requires exclusive tracing; unavailable with go test -trace")
+	}
+	// Tracing is process-wide, so these cases must run sequentially.
 	for _, tt := range []struct {
 		name        string
-		timeout     time.Duration
+		seconds     string
 		wantTimeout bool
 	}{
-		{name: "drains_active_request", timeout: 3 * time.Second},
-		{name: "closes_after_timeout", timeout: time.Millisecond, wantTimeout: true},
+		{name: "drains_active_request", seconds: "1"},
+		{name: "closes_after_timeout", seconds: "30", wantTimeout: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			t.Cleanup(func() {
+				deadline := time.After(5 * time.Second)
+				for trace.IsEnabled() {
+					select {
+					case <-deadline:
+						t.Fatal("profiling handler did not stop tracing after shutdown")
+					case <-time.After(time.Millisecond):
+					}
+				}
+			})
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			testNil(t, err)
 			t.Cleanup(func() { _ = listener.Close() })
-
-			started := make(chan struct{})
-			release := make(chan struct{})
-			releaseRequest := sync.OnceFunc(func() { close(release) })
-			finished := make(chan struct{})
-			server := &http.Server{
-				ReadHeaderTimeout: time.Second,
-				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					defer close(finished)
-					close(started)
-					select {
-					case <-release:
-						_, _ = io.WriteString(w, "finished")
-					case <-r.Context().Done():
-					}
-				}),
-			}
-			shuttingDown := make(chan struct{})
-			server.RegisterOnShutdown(func() { close(shuttingDown) })
-			ctx, cancel := context.WithCancelCause(t.Context())
-			var logs bytes.Buffer
-			log := slog.New(slog.NewJSONHandler(&logs, nil))
+			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan error, 1)
 			go func() {
-				done <- serve(ctx, server, listener, log, tt.timeout)
+				done <- run(ctx, io.Discard, func(string) string { return "" }, "vtest",
+					func(string, string) (net.Listener, error) { return listener, nil })
 				close(done)
 			}()
+			requestCtx, cancelRequest := context.WithCancel(t.Context())
 			t.Cleanup(func() {
-				cancel(nil)
-				releaseRequest()
-				_ = server.Close()
+				cancelRequest()
+				cancel()
 				_ = testReceive(t, done)
 			})
 
-			client := &http.Client{Timeout: 3 * time.Second}
+			client := &http.Client{Timeout: 20 * time.Second}
 			t.Cleanup(client.CloseIdleConnections)
+			req, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
+				"http://"+listener.Addr().String()+"/debug/pprof/trace?seconds="+tt.seconds, nil)
+			testNil(t, err)
 			response := make(chan error, 1)
 			go func() {
 				defer close(response)
-				res, err := client.Get("http://" + listener.Addr().String())
+				res, err := client.Do(req)
 				if err != nil {
 					response <- err
 					return
 				}
 				defer res.Body.Close() //nolint:errcheck
-				body, err := io.ReadAll(res.Body)
-				if err == nil && (res.StatusCode != http.StatusOK || string(body) != "finished") {
-					err = fmt.Errorf("unexpected response: %d %q", res.StatusCode, body)
+				_, err = io.Copy(io.Discard, res.Body)
+				if err == nil && res.StatusCode != http.StatusOK {
+					err = fmt.Errorf("unexpected status: %d", res.StatusCode)
 				}
 				response <- err
 			}()
 			t.Cleanup(func() {
-				releaseRequest()
+				cancelRequest()
 				_ = testReceive(t, response)
 			})
 
-			testReceive(t, started)
-			cause := errors.New("test shutdown")
-			cancel(cause)
-			testReceive(t, shuttingDown)
-			if !tt.wantTimeout {
+			// An enabled trace confirms the request reached the handler before cancellation.
+			deadline := time.After(3 * time.Second)
+			for !trace.IsEnabled() {
 				select {
-				case err := <-done:
-					t.Fatalf("serve returned before the request finished: %v", err)
-				default:
+				case err := <-response:
+					t.Fatalf("profiling request ended before shutdown: %v", err)
+				case <-deadline:
+					t.Fatal("profiling request did not start")
+				case <-time.After(time.Millisecond):
 				}
-				releaseRequest()
-				testNil(t, testReceive(t, response))
-				testNil(t, testReceive(t, done))
-			} else {
-				err := testReceive(t, done)
+			}
+			cancel()
+			select {
+			case err = <-done:
+			case <-time.After(15 * time.Second):
+				t.Fatal("run did not finish shutdown")
+			}
+			if tt.wantTimeout {
 				if !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("expected shutdown deadline, got %v", err)
 				}
 				testContains(t, "server shutdown:", err.Error())
 				if err := testReceive(t, response); err == nil || errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("expected connection closure before the client deadline, got %v", err)
+					t.Fatalf("expected connection closure before client deadline, got %v", err)
 				}
+			} else {
+				testNil(t, err)
+				testNil(t, testReceive(t, response))
 			}
-			testReceive(t, finished)
-			testContains(t, "shutting down server", logs.String())
-			testContains(t, cause.Error(), logs.String())
 			conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
 			if err == nil {
 				_ = conn.Close()
-				t.Fatal("listener still accepts connections after completion")
+				t.Fatal("listener still accepts connections after run returned")
 			}
 		})
 	}
 }
 
-// TestServeCompletion covers cancellation before serving and an unexpected accept error.
-func TestServeCompletion(t *testing.T) {
+// TestRunCompletion covers cancellation before serving and an unexpected accept error.
+func TestRunCompletion(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name              string
@@ -251,28 +246,30 @@ func TestServeCompletion(t *testing.T) {
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			testNil(t, err)
 			t.Cleanup(func() { _ = listener.Close() })
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			cause := errors.New("test shutdown")
 			if tt.cancelBeforeServe {
-				cancel()
+				cancel(cause)
 			} else {
 				testNil(t, listener.Close())
 			}
-			server := &http.Server{ReadHeaderTimeout: time.Second}
-			log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+			var logs bytes.Buffer
 			done := make(chan error, 1)
 			go func() {
-				done <- serve(ctx, server, listener, log, time.Second)
+				done <- run(ctx, &logs, func(string) string { return "" }, "vtest",
+					func(string, string) (net.Listener, error) { return listener, nil })
 				close(done)
 			}()
 			t.Cleanup(func() {
-				cancel()
-				_ = server.Close()
+				cancel(nil)
 				_ = testReceive(t, done)
 			})
 			err = testReceive(t, done)
 			if tt.cancelBeforeServe {
 				testNil(t, err)
+				testContains(t, "shutting down server", logs.String())
+				testContains(t, cause.Error(), logs.String())
 				conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
 				if err == nil {
 					_ = conn.Close()
