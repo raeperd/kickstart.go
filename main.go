@@ -69,17 +69,19 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 // serve owns listener and blocks until serving and graceful shutdown complete.
 // On a shutdown timeout, remaining connections are closed before returning.
 func serve(ctx context.Context, server *http.Server, listener net.Listener, log *slog.Logger, shutdownTimeout time.Duration) error {
-	defer listener.Close() //nolint:errcheck // Also close when cancellation precedes Serve.
-	defer server.Close()   //nolint:errcheck // Close remaining connections on any exit.
+	defer server.Close() //nolint:errcheck // Close remaining connections on any exit.
 
 	served := make(chan error, 1)
-	go func() { served <- server.Serve(listener) }()
+	go func() {
+		err := server.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		served <- err
+	}()
 
 	select {
 	case err := <-served:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
 		return err
 	case <-ctx.Done():
 		log.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
@@ -90,12 +92,9 @@ func serve(ctx context.Context, server *http.Server, listener net.Listener, log 
 		if err != nil {
 			return fmt.Errorf("server shutdown: %w", err)
 		}
-		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			return serveErr
-		}
 
 		// Cleanup resources here, in reverse order of initialization
-		return nil
+		return serveErr
 	}
 }
 

@@ -132,8 +132,15 @@ func TestRunBindError(t *testing.T) {
 // TestServeShutdown verifies cancellation drains requests, or closes them on timeout.
 func TestServeShutdown(t *testing.T) {
 	t.Parallel()
-	for _, timeout := range []time.Duration{3 * time.Second, time.Millisecond} {
-		t.Run(timeout.String(), func(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		timeout     time.Duration
+		wantTimeout bool
+	}{
+		{name: "drains_active_request", timeout: 3 * time.Second},
+		{name: "closes_after_timeout", timeout: time.Millisecond, wantTimeout: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			testNil(t, err)
@@ -162,7 +169,7 @@ func TestServeShutdown(t *testing.T) {
 			log := slog.New(slog.NewJSONHandler(&logs, nil))
 			done := make(chan error, 1)
 			go func() {
-				done <- serve(ctx, server, listener, log, timeout)
+				done <- serve(ctx, server, listener, log, tt.timeout)
 				close(done)
 			}()
 			t.Cleanup(func() {
@@ -198,7 +205,7 @@ func TestServeShutdown(t *testing.T) {
 			cause := errors.New("test shutdown")
 			cancel(cause)
 			testReceive(t, shuttingDown)
-			if timeout == 3*time.Second {
+			if !tt.wantTimeout {
 				select {
 				case err := <-done:
 					t.Fatalf("serve returned before the request finished: %v", err)
@@ -232,15 +239,21 @@ func TestServeShutdown(t *testing.T) {
 // TestServeCompletion covers cancellation before serving and an unexpected accept error.
 func TestServeCompletion(t *testing.T) {
 	t.Parallel()
-	for _, canceled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("canceled=%t", canceled), func(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		cancelBeforeServe bool
+	}{
+		{name: "canceled_before_serving", cancelBeforeServe: true},
+		{name: "closed_listener"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			testNil(t, err)
 			t.Cleanup(func() { _ = listener.Close() })
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			if canceled {
+			if tt.cancelBeforeServe {
 				cancel()
 			} else {
 				testNil(t, listener.Close())
@@ -258,7 +271,7 @@ func TestServeCompletion(t *testing.T) {
 				_ = testReceive(t, done)
 			})
 			err = testReceive(t, done)
-			if canceled {
+			if tt.cancelBeforeServe {
 				testNil(t, err)
 				conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
 				if err == nil {
