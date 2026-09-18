@@ -156,7 +156,7 @@ func accesslog(next http.Handler, log *slog.Logger) http.HandlerFunc {
 		wr := responseRecorder{ResponseWriter: w, protoMajor: r.ProtoMajor}
 		completed := false
 		defer func() {
-			if completed && !wr.committed() {
+			if completed && wr.status < 200 && (wr.protoMajor != 1 || wr.status != http.StatusSwitchingProtocols) {
 				wr.status = http.StatusOK // net/http sends 200 when the handler returns without a final header.
 			}
 			log.InfoContext(r.Context(), "accessed",
@@ -194,7 +194,7 @@ func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 				slog.String("path", r.URL.Path),
 				slog.String("query", r.URL.RawQuery),
 				slog.String("ip", r.RemoteAddr))
-			if wr.committed() {
+			if wr.status >= 200 || (wr.protoMajor == 1 && wr.status == http.StatusSwitchingProtocols) {
 				panic(http.ErrAbortHandler) // A partial response cannot be replaced or completed safely.
 			}
 			http.Error(&wr, "internal server error", http.StatusInternalServerError)
@@ -213,7 +213,7 @@ type responseRecorder struct {
 
 // Write records bytes accepted by the writer and the implicit final 200 status.
 func (re *responseRecorder) Write(b []byte) (int, error) {
-	if !re.committed() {
+	if re.status < 200 && (re.protoMajor != 1 || re.status != http.StatusSwitchingProtocols) {
 		re.status = http.StatusOK // Leave implicit header handling, including content sniffing, to Write.
 	}
 	n, err := re.ResponseWriter.Write(b)
@@ -223,7 +223,7 @@ func (re *responseRecorder) Write(b []byte) (int, error) {
 
 // WriteHeader remembers the last informational header or the first final header.
 func (re *responseRecorder) WriteHeader(statusCode int) {
-	if re.committed() {
+	if re.status >= 200 || (re.protoMajor == 1 && re.status == http.StatusSwitchingProtocols) {
 		return
 	}
 	re.ResponseWriter.WriteHeader(statusCode)
@@ -234,10 +234,4 @@ func (re *responseRecorder) WriteHeader(statusCode int) {
 // which would also allow connection takeover to bypass response accounting.
 func (re *responseRecorder) SetWriteDeadline(deadline time.Time) error {
 	return http.NewResponseController(re.ResponseWriter).SetWriteDeadline(deadline)
-}
-
-// committed reports whether a final status has been accepted. net/http treats
-// 101 as final only for HTTP/1.x; every 1xx header is informational under HTTP/2.
-func (re *responseRecorder) committed() bool {
-	return re.status >= 200 || (re.protoMajor == 1 && re.status == http.StatusSwitchingProtocols)
 }
