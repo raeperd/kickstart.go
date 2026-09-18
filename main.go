@@ -230,15 +230,6 @@ func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 }
 
-// FlushError records net/http's implicit 200 even if flushing buffered data fails.
-func (re *responseRecorder) FlushError() error {
-	err := http.NewResponseController(re.ResponseWriter).Flush()
-	if !errors.Is(err, http.ErrNotSupported) && !re.committed() {
-		re.status = http.StatusOK
-	}
-	return err
-}
-
 // SetWriteDeadline supports pprof's deadline extension without exposing Unwrap,
 // which would also allow connection takeover to bypass response accounting.
 func (re *responseRecorder) SetWriteDeadline(deadline time.Time) error {

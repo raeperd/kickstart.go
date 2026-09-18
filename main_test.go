@@ -213,44 +213,16 @@ func TestAccessLogRecovery(t *testing.T) {
 			status: http.StatusCreated,
 		},
 		{
-			name: "flush commits implicit status",
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				if err := http.NewResponseController(w).Flush(); err != nil {
-					panic(err)
-				}
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = io.WriteString(w, "ok")
-			},
-			status: http.StatusOK,
-			body:   "ok",
-		},
-		{
-			name: "panic after informational header and flush",
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusEarlyHints)
-				if err := http.NewResponseController(w).Flush(); err != nil {
-					panic(err)
-				}
-				panic("private panic details")
-			},
-			status:        http.StatusOK,
-			informational: []int{http.StatusEarlyHints},
-			panicLog:      true,
-			aborted:       true,
-		},
-		{
-			name: "abort after flushed write",
+			name: "abort after buffered write",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusCreated)
 				_, _ = io.WriteString(w, "partial")
-				if err := http.NewResponseController(w).Flush(); err != nil {
-					panic(err)
-				}
 				panic(http.ErrAbortHandler)
 			},
-			status:  http.StatusCreated,
-			body:    "partial",
-			aborted: true,
+			status:     http.StatusCreated,
+			body:       "partial",
+			aborted:    true,
+			noResponse: true,
 		},
 		{
 			name:       "abort before writing",
@@ -316,13 +288,9 @@ func TestAccessLogRecovery(t *testing.T) {
 				}
 			} else {
 				testNil(t, err)
-				body, readErr := io.ReadAll(res.Body)
+				body, err := io.ReadAll(res.Body)
 				testNil(t, res.Body.Close())
-				if tt.aborted {
-					testEqual(t, io.ErrUnexpectedEOF, readErr)
-				} else {
-					testNil(t, readErr)
-				}
+				testNil(t, err)
 				testEqual(t, tt.status, res.StatusCode)
 				testEqual(t, tt.body, string(body))
 			}
@@ -534,7 +502,7 @@ func TestRootHTTPHandlerRoutes(t *testing.T) {
 }
 
 // Writer failures are exercised directly because a real connection cannot reliably
-// force a particular short write or flush error.
+// force a particular short write.
 func TestResponseRecorderWriteFailures(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -565,37 +533,6 @@ type writeFailure struct {
 }
 
 func (w writeFailure) Write([]byte) (int, error) { return w.n, w.err }
-
-func TestResponseRecorderFlushFailures(t *testing.T) {
-	t.Parallel()
-	t.Run("unsupported flush does not commit", func(t *testing.T) {
-		t.Parallel()
-		underlying := httptest.NewRecorder()
-		recorder := responseRecorder{ResponseWriter: struct{ http.ResponseWriter }{underlying}}
-		err := http.NewResponseController(&recorder).Flush()
-		testEqual(t, true, errors.Is(err, http.ErrNotSupported))
-		recorder.WriteHeader(http.StatusCreated)
-		testEqual(t, http.StatusCreated, underlying.Code)
-		testEqual(t, http.StatusCreated, recorder.status)
-	})
-	t.Run("failed flush still commits", func(t *testing.T) {
-		t.Parallel()
-		underlying := httptest.NewRecorder()
-		recorder := responseRecorder{ResponseWriter: flushFailure{underlying}}
-		err := http.NewResponseController(&recorder).Flush()
-		testEqual(t, io.ErrClosedPipe, err)
-		recorder.WriteHeader(http.StatusInternalServerError)
-		testEqual(t, http.StatusOK, underlying.Code)
-		testEqual(t, http.StatusOK, recorder.status)
-	})
-}
-
-type flushFailure struct{ http.ResponseWriter }
-
-func (w flushFailure) FlushError() error {
-	w.WriteHeader(http.StatusOK)
-	return io.ErrClosedPipe
-}
 
 func testEqual[T comparable](tb testing.TB, want, got T) {
 	tb.Helper()
