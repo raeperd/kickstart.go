@@ -20,53 +20,34 @@ import (
 
 // TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-	if err := listener.Close(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	endpoint = "http://127.0.0.1:" + port
 	ctx, cancel := context.WithCancel(context.Background())
+	reader, writer := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
 		getenv := func(key string) string {
 			if key == "PORT" {
-				return port
+				return "0"
 			}
 			return ""
 		}
-		done <- run(ctx, os.Stdout, getenv, "vtest")
+		err := run(ctx, io.MultiWriter(os.Stdout, writer), getenv, "vtest")
+		_ = writer.CloseWithError(err)
+		done <- err
 	}()
 
-	client := &http.Client{Timeout: 250 * time.Millisecond}
-	ready := false
-	for start := time.Now(); time.Since(start) < 3*time.Second; {
-		select {
-		case err := <-done:
-			fmt.Fprintln(os.Stderr, "server stopped before tests:", err)
-			os.Exit(1)
-		default:
-		}
-		res, err := client.Get(endpoint + "/health")
-		if err == nil {
-			_ = res.Body.Close()
-			if res.StatusCode == http.StatusOK {
-				ready = true
-				break
-			}
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	client.CloseIdleConnections()
-	if !ready {
-		fmt.Fprintln(os.Stderr, "server did not become healthy before tests")
+	// The startup log reports the assigned port after the listener is bound.
+	timer := time.AfterFunc(3*time.Second, func() {
+		_ = reader.CloseWithError(errors.New("timed out waiting for server startup"))
+	})
+	var startup struct{ Port int }
+	err := json.NewDecoder(reader).Decode(&startup)
+	timer.Stop()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	endpoint = "http://127.0.0.1:" + strconv.Itoa(startup.Port)
+	go func() { _, _ = io.Copy(io.Discard, reader) }()
 
 	exitCode := m.Run()
 	cancel()
@@ -74,6 +55,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		exitCode = 1
 	}
+	_ = reader.Close()
 	os.Exit(exitCode)
 }
 
@@ -117,7 +99,6 @@ func TestRunPort(t *testing.T) {
 	}{
 		{"not a number", "abc"},
 		{"out of range", "70000"},
-		{"zero", "0"},
 		{"negative", "-1"},
 	}
 	for _, tt := range invalidTests {
@@ -161,17 +142,12 @@ func TestRunBindError(t *testing.T) {
 
 // TestRunCanceled verifies startup with a canceled context completes shutdown.
 func TestRunCanceled(t *testing.T) {
-	listener, err := net.Listen("tcp", ":0")
-	testNil(t, err)
-	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-	testNil(t, listener.Close())
-
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cause := errors.New("test shutdown")
 	cancel(cause)
 	var logs bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, &logs, func(string) string { return port }, "vtest") }()
+	go func() { done <- run(ctx, &logs, func(string) string { return "0" }, "vtest") }()
 	select {
 	case err := <-done:
 		testNil(t, err)
@@ -181,7 +157,12 @@ func TestRunCanceled(t *testing.T) {
 	testContains(t, "shutting down server", logs.String())
 	testContains(t, cause.Error(), logs.String())
 
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, time.Second)
+	var startup struct{ Port int }
+	testNil(t, json.NewDecoder(&logs).Decode(&startup))
+	if startup.Port <= 0 {
+		t.Fatalf("expected an assigned port, got %d", startup.Port)
+	}
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(startup.Port), time.Second)
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("listener still accepts connections after run returned")

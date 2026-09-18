@@ -40,8 +40,8 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	if p := getenv("PORT"); p != "" {
 		var err error
 		port, err = strconv.ParseUint(p, 10, 16)
-		if err != nil || port == 0 {
-			return fmt.Errorf("invalid PORT %q: port must be between 1 and 65535", p)
+		if err != nil {
+			return fmt.Errorf("invalid PORT %q: port must be between 0 and 65535", p)
 		}
 	}
 
@@ -62,7 +62,7 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 	if err != nil {
 		return err
 	}
-	log.InfoContext(ctx, "server started", slog.Uint64("port", port), slog.String("version", version))
+	log.InfoContext(ctx, "server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port), slog.String("version", version))
 	defer server.Close() //nolint:errcheck // Close remaining connections on any exit.
 
 	served := make(chan error, 1)
