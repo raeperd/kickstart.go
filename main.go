@@ -64,11 +64,11 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 
 	served := make(chan error, 1)
 	go func() {
-		err := server.ListenAndServe()
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
+		if err := server.ListenAndServe(); errors.Is(err, http.ErrServerClosed) {
+			served <- nil
+		} else {
+			served <- err
 		}
-		served <- err
 	}()
 
 	select {
