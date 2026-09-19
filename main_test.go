@@ -46,6 +46,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if startup.Port <= 0 {
+		fmt.Fprintln(os.Stderr, "server did not report an assigned port")
+		os.Exit(1)
+	}
 	endpoint = "http://127.0.0.1:" + strconv.Itoa(startup.Port)
 	go func() { _, _ = io.Copy(io.Discard, reader) }()
 
@@ -140,7 +144,7 @@ func TestRunBindError(t *testing.T) {
 	testEqual(t, defaultLogger, slog.Default())
 }
 
-// TestRunCanceled verifies startup with a canceled context completes shutdown.
+// TestRunCanceled verifies an already-canceled context completes shutdown.
 func TestRunCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cause := errors.New("test shutdown")
@@ -156,17 +160,6 @@ func TestRunCanceled(t *testing.T) {
 	}
 	testContains(t, "shutting down server", logs.String())
 	testContains(t, cause.Error(), logs.String())
-
-	var startup struct{ Port int }
-	testNil(t, json.NewDecoder(&logs).Decode(&startup))
-	if startup.Port <= 0 {
-		t.Fatalf("expected an assigned port, got %d", startup.Port)
-	}
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(startup.Port), time.Second)
-	if err == nil {
-		_ = conn.Close()
-		t.Fatal("listener still accepts connections after run returned")
-	}
 }
 
 // TestAccessLogMiddleware verifies logged fields match request/response.

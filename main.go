@@ -49,25 +49,24 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 
 	log := slog.New(slog.NewJSONHandler(w, nil))
 	server := &http.Server{
-		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           newRootHTTPHandler(log, version),
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
+		Addr:     fmt.Sprintf(":%d", port),
+		Handler:  newRootHTTPHandler(log, version),
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
+		BaseContext: func(listener net.Listener) context.Context {
+			log.InfoContext(ctx, "server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port), slog.String("version", version))
+			return context.Background()
+		},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	listener, err := net.Listen("tcp", server.Addr)
-	if err != nil {
-		return err
-	}
-	log.InfoContext(ctx, "server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port), slog.String("version", version))
 	defer server.Close() //nolint:errcheck // Close remaining connections on any exit.
 
 	served := make(chan error, 1)
 	go func() {
-		err := server.Serve(listener)
+		err := server.ListenAndServe()
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
