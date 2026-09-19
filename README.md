@@ -13,6 +13,8 @@ $ curl localhost:8080/health
 {"version":"local","uptime":"1.23s","lastCommitHash":"abc1234","lastCommitTime":"2024-01-01T00:00:00Z","dirtyBuild":false}
 ```
 
+`PORT` defaults to `8080`. Set `PORT=0` to let the OS choose an available port; the startup log reports the assigned port.
+
 ## Features
 - Graceful shutdown with `SIGINT`/`SIGTERM` signal handling
 - Health endpoint with version, git revision, and uptime

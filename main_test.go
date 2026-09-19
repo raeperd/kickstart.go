@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -21,52 +21,49 @@ import (
 	"time"
 )
 
-// TestMain starts a real server for integration tests.
+// TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
-	port := func() string { // Get a free port to run the server
-		listener, err := net.Listen("tcp", ":0")
-		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-		defer listener.Close() //nolint:errcheck
-		addr := listener.Addr().(*net.TCPAddr)
-		return strconv.Itoa(addr.Port)
-	}()
-
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { // Start the server in a goroutine
-		getenv := func(key string) string {
-			if key == "PORT" {
-				return port
+	port := make(chan int, 1)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == "port" {
+				port <- int(attr.Value.Int64())
 			}
-			return ""
-		}
-		if err := run(ctx, os.Stdout, getenv, "vtest"); err != nil {
-			cancel()
-			log.Fatal(err)
-		}
-	}()
+			return attr
+		},
+	}))
+	runDone := make(chan error, 1)
+	go func() { runDone <- run(ctx, log, func(string) string { return "0" }, "vtest") }()
 
-	endpoint = "http://localhost:" + port
-
-	start := time.Now() // wait for server to be healthy before tests.
-	for time.Since(start) < 3*time.Second {
-		if res, err := http.Get(endpoint + "/health"); err == nil && res.StatusCode == http.StatusOK {
-			_ = res.Body.Close()
-			break
+	select {
+	case p := <-port:
+		if p <= 0 {
+			fmt.Fprintln(os.Stderr, "server did not report an assigned port")
+			os.Exit(1)
 		}
-		time.Sleep(250 * time.Millisecond)
+		endpoint = "http://127.0.0.1:" + strconv.Itoa(p)
+	case err := <-runDone:
+		fmt.Fprintln(os.Stderr, "server stopped before tests:", err)
+		os.Exit(1)
+	case <-time.After(3 * time.Second):
+		fmt.Fprintln(os.Stderr, "timed out waiting for server startup")
+		os.Exit(1)
 	}
 
 	exitCode := m.Run()
 	cancel()
+	if err := <-runDone; err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exitCode = 1
+	}
 	os.Exit(exitCode)
 }
 
 // endpoint is set by TestMain; do not modify.
 var endpoint string
 
-// TestGetHealth tests the /health endpoint against the real server.
+// TestGetHealth tests the /health endpoint against the shared server.
 func TestGetHealth(t *testing.T) {
 	t.Parallel()
 	type response struct {
@@ -77,12 +74,11 @@ func TestGetHealth(t *testing.T) {
 		DirtyBuild     bool      `json:"dirtyBuild"`
 	}
 
-	res, err := http.Get(endpoint + "/health")
+	client := &http.Client{Timeout: 3 * time.Second}
+	t.Cleanup(client.CloseIdleConnections)
+	res, err := client.Get(endpoint + "/health")
 	testNil(t, err)
-	t.Cleanup(func() {
-		err = res.Body.Close()
-		testNil(t, err)
-	})
+	t.Cleanup(func() { testNil(t, res.Body.Close()) })
 	testEqual(t, http.StatusOK, res.StatusCode)
 	testEqual(t, "application/json", res.Header.Get("Content-Type"))
 
@@ -97,6 +93,7 @@ func TestGetHealth(t *testing.T) {
 // TestRunPort tests invalid PORT values.
 func TestRunPort(t *testing.T) {
 	t.Parallel()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 
 	invalidTests := []struct {
 		name string
@@ -104,25 +101,58 @@ func TestRunPort(t *testing.T) {
 	}{
 		{"not a number", "abc"},
 		{"out of range", "70000"},
-		{"zero", "0"},
 		{"negative", "-1"},
 	}
 	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			getenv := func(key string) string {
-				if key == "PORT" {
-					return tt.port
-				}
-				return ""
-			}
-			err := run(context.Background(), io.Discard, getenv, "vtest")
+			err := run(context.Background(), log, func(string) string { return tt.port }, "vtest")
 			if err == nil {
 				t.Fatal("expected error for invalid PORT")
 			}
 			testContains(t, "invalid PORT", err.Error())
 		})
 	}
+}
+
+// TestRunBindError verifies a failed bind cannot report successful startup or change global logging.
+func TestRunBindError(t *testing.T) {
+	listener, err := net.Listen("tcp", ":0")
+	testNil(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	var logs bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&logs, nil))
+	defaultLogger := slog.Default()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	err = run(ctx, log, func(string) string { return port }, "vtest")
+	if err == nil {
+		t.Fatal("expected bind error for occupied port")
+	}
+	if strings.Contains(logs.String(), "server started") {
+		t.Fatalf("failed bind reported successful startup: %s", &logs)
+	}
+	testEqual(t, defaultLogger, slog.Default())
+}
+
+// TestRunCanceled verifies an already-canceled context completes shutdown.
+func TestRunCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("test shutdown")
+	cancel(cause)
+	var logs bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&logs, nil))
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, log, func(string) string { return "0" }, "vtest") }()
+	select {
+	case err := <-done:
+		testNil(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("run did not finish after cancellation")
+	}
+	testContains(t, "shutting down server", logs.String())
+	testContains(t, cause.Error(), logs.String())
 }
 
 // TestAccessLogRecovery checks the response on the wire and its final access record.
