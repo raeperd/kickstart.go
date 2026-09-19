@@ -24,31 +24,25 @@ import (
 // TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithCancel(context.Background())
-	listeningPort := make(chan int, 1)
+	port := make(chan int, 1)
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
 			if attr.Key == "port" {
-				listeningPort <- int(attr.Value.Int64())
+				port <- int(attr.Value.Int64())
 			}
 			return attr
 		},
 	}))
-	getenv := func(key string) string {
-		if key == "PORT" {
-			return "0"
-		}
-		return ""
-	}
 	runDone := make(chan error, 1)
-	go func() { runDone <- run(ctx, log, getenv, "vtest") }()
+	go func() { runDone <- run(ctx, log, func(string) string { return "0" }, "vtest") }()
 
 	select {
-	case port := <-listeningPort:
-		if port <= 0 {
+	case p := <-port:
+		if p <= 0 {
 			fmt.Fprintln(os.Stderr, "server did not report an assigned port")
 			os.Exit(1)
 		}
-		endpoint = "http://127.0.0.1:" + strconv.Itoa(port)
+		endpoint = "http://127.0.0.1:" + strconv.Itoa(p)
 	case err := <-runDone:
 		fmt.Fprintln(os.Stderr, "server stopped before tests:", err)
 		os.Exit(1)
@@ -112,13 +106,7 @@ func TestRunPort(t *testing.T) {
 	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			getenv := func(key string) string {
-				if key == "PORT" {
-					return tt.port
-				}
-				return ""
-			}
-			err := run(context.Background(), log, getenv, "vtest")
+			err := run(context.Background(), log, func(string) string { return tt.port }, "vtest")
 			if err == nil {
 				t.Fatal("expected error for invalid PORT")
 			}
@@ -133,13 +121,12 @@ func TestRunBindError(t *testing.T) {
 	testNil(t, err)
 	t.Cleanup(func() { _ = listener.Close() })
 	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-	getenv := func(string) string { return port }
 	var logs bytes.Buffer
 	log := slog.New(slog.NewJSONHandler(&logs, nil))
 	defaultLogger := slog.Default()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	err = run(ctx, log, getenv, "vtest")
+	err = run(ctx, log, func(string) string { return port }, "vtest")
 	if err == nil {
 		t.Fatal("expected bind error for occupied port")
 	}
