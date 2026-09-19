@@ -6,7 +6,6 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -22,7 +21,8 @@ import (
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	if err := run(ctx, os.Stdout, os.Getenv, Version); err != nil {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(ctx, log, os.Getenv, Version); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
@@ -35,7 +35,7 @@ var Version string
 // run binds the configured port and blocks until serving and shutdown complete.
 // Dependencies are injected as parameters for testability.
 // Inspired by https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years
-func run(ctx context.Context, w io.Writer, getenv func(string) string, version string) error {
+func run(ctx context.Context, log *slog.Logger, getenv func(string) string, version string) error {
 	port := uint64(8080)
 	if p := getenv("PORT"); p != "" {
 		var err error
@@ -47,7 +47,6 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string, version s
 
 	// Initialize resources here
 
-	log := slog.New(slog.NewJSONHandler(w, nil))
 	server := &http.Server{
 		Addr:     fmt.Sprintf(":%d", port),
 		Handler:  newRootHTTPHandler(log, version),

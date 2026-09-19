@@ -21,45 +21,45 @@ import (
 // TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithCancel(context.Background())
-	reader, writer := io.Pipe()
-	done := make(chan error, 1)
-	go func() {
-		getenv := func(key string) string {
-			if key == "PORT" {
-				return "0"
+	listeningPort := make(chan int, 1)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == "port" {
+				listeningPort <- int(attr.Value.Int64())
 			}
-			return ""
+			return attr
+		},
+	}))
+	getenv := func(key string) string {
+		if key == "PORT" {
+			return "0"
 		}
-		err := run(ctx, io.MultiWriter(os.Stdout, writer), getenv, "vtest")
-		_ = writer.CloseWithError(err)
-		done <- err
-	}()
+		return ""
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- run(ctx, log, getenv, "vtest") }()
 
-	// The startup log reports the assigned port after the listener is bound.
-	timer := time.AfterFunc(3*time.Second, func() {
-		_ = reader.CloseWithError(errors.New("timed out waiting for server startup"))
-	})
-	var startup struct{ Port int }
-	err := json.NewDecoder(reader).Decode(&startup)
-	timer.Stop()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	select {
+	case port := <-listeningPort:
+		if port <= 0 {
+			fmt.Fprintln(os.Stderr, "server did not report an assigned port")
+			os.Exit(1)
+		}
+		endpoint = "http://127.0.0.1:" + strconv.Itoa(port)
+	case err := <-runDone:
+		fmt.Fprintln(os.Stderr, "server stopped before tests:", err)
+		os.Exit(1)
+	case <-time.After(3 * time.Second):
+		fmt.Fprintln(os.Stderr, "timed out waiting for server startup")
 		os.Exit(1)
 	}
-	if startup.Port <= 0 {
-		fmt.Fprintln(os.Stderr, "server did not report an assigned port")
-		os.Exit(1)
-	}
-	endpoint = "http://127.0.0.1:" + strconv.Itoa(startup.Port)
-	go func() { _, _ = io.Copy(io.Discard, reader) }()
 
 	exitCode := m.Run()
 	cancel()
-	if err := <-done; err != nil {
+	if err := <-runDone; err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		exitCode = 1
 	}
-	_ = reader.Close()
 	os.Exit(exitCode)
 }
 
@@ -96,6 +96,7 @@ func TestGetHealth(t *testing.T) {
 // TestRunPort tests invalid PORT values.
 func TestRunPort(t *testing.T) {
 	t.Parallel()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 
 	invalidTests := []struct {
 		name string
@@ -114,7 +115,7 @@ func TestRunPort(t *testing.T) {
 				}
 				return ""
 			}
-			err := run(context.Background(), io.Discard, getenv, "vtest")
+			err := run(context.Background(), log, getenv, "vtest")
 			if err == nil {
 				t.Fatal("expected error for invalid PORT")
 			}
@@ -131,10 +132,11 @@ func TestRunBindError(t *testing.T) {
 	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 	getenv := func(string) string { return port }
 	var logs bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&logs, nil))
 	defaultLogger := slog.Default()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	err = run(ctx, &logs, getenv, "vtest")
+	err = run(ctx, log, getenv, "vtest")
 	if err == nil {
 		t.Fatal("expected bind error for occupied port")
 	}
@@ -150,8 +152,9 @@ func TestRunCanceled(t *testing.T) {
 	cause := errors.New("test shutdown")
 	cancel(cause)
 	var logs bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&logs, nil))
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, &logs, func(string) string { return "0" }, "vtest") }()
+	go func() { done <- run(ctx, log, func(string) string { return "0" }, "vtest") }()
 	select {
 	case err := <-done:
 		testNil(t, err)
