@@ -7,8 +7,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      time: "00:00"
-      timezone: "Etc/UTC"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
     commit-message:
       prefix: "ci"
       include: "scope"
@@ -18,8 +19,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      time: "00:00"
-      timezone: "Etc/UTC"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
     commit-message:
       prefix: "ci"
       include: "scope"
