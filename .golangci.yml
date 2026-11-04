@@ -53,5 +53,5 @@ formatters:
   settings:
     goimports:
       # TODO: replace this with your own package name
-      local-prefixes: ["github.com/raeperd/kickstart.go"] 
+      local-prefixes: ["github.com/raeperd/kickstart"]
 

@@ -1,3 +1,3 @@
-module github.com/raeperd/kickstart.go
+module github.com/raeperd/kickstart
 
 go 1.26
