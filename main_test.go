@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 		},
 	}))
 	runDone := make(chan error, 1)
-	go func() { runDone <- run(ctx, log, testGetenv(map[string]string{"PORT": "0"}), "vtest") }()
+	go func() { runDone <- run(ctx, log, func(string) string { return "0" }, "vtest") }()
 
 	select {
 	case p := <-port:
@@ -90,125 +90,29 @@ func TestGetHealth(t *testing.T) {
 	}
 }
 
-// TestRunPort tests invalid PORT and DEBUG_PORT values.
+// TestRunPort tests invalid PORT values.
 func TestRunPort(t *testing.T) {
 	t.Parallel()
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 
 	invalidTests := []struct {
 		name string
-		env  map[string]string
-		want string
+		port string
 	}{
-		{"not a number", map[string]string{"PORT": "abc"}, "invalid PORT"},
-		{"out of range", map[string]string{"PORT": "70000"}, "invalid PORT"},
-		{"negative", map[string]string{"PORT": "-1"}, "invalid PORT"},
-		{"debug not a number", map[string]string{"PORT": "0", "DEBUG_PORT": "abc"}, "invalid DEBUG_PORT"},
-		{"debug out of range", map[string]string{"PORT": "0", "DEBUG_PORT": "70000"}, "invalid DEBUG_PORT"},
+		{"not a number", "abc"},
+		{"out of range", "70000"},
+		{"negative", "-1"},
 	}
 	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := run(context.Background(), log, testGetenv(tt.env), "vtest")
+			err := run(context.Background(), log, func(string) string { return tt.port }, "vtest")
 			if err == nil {
-				t.Fatal("expected error for invalid port")
+				t.Fatal("expected error for invalid PORT")
 			}
-			testContains(t, tt.want, err.Error())
+			testContains(t, "invalid PORT", err.Error())
 		})
 	}
-}
-
-// TestRunDebugPort verifies DEBUG_PORT serves pprof and expvar on a separate listener
-// that the service port does not expose.
-func TestRunDebugPort(t *testing.T) {
-	t.Parallel()
-	started := make(chan startup, 2)
-	log := slog.New(slog.NewJSONHandler(startupLog(started), nil))
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- run(ctx, log, testGetenv(map[string]string{"PORT": "0", "DEBUG_PORT": "0"}), "vtest") }()
-	ports := map[string]int{}
-	for len(ports) < 2 {
-		select {
-		case s := <-started:
-			ports[s.Msg] = s.Port
-		case err := <-done:
-			t.Fatal("server stopped before test:", err)
-		case <-time.After(3 * time.Second):
-			t.Fatal("timed out waiting for server startup")
-		}
-	}
-
-	client := &http.Client{Timeout: 3 * time.Second}
-	t.Cleanup(client.CloseIdleConnections)
-	for _, tt := range []struct {
-		name   string
-		port   int
-		path   string
-		status int
-		body   string
-	}{
-		{"debug expvar", ports["debug server started"], "/debug/vars", http.StatusOK, `"memstats"`},
-		{"debug pprof", ports["debug server started"], "/debug/pprof/goroutine?debug=1", http.StatusOK, "goroutine profile"},
-		{"debug health", ports["debug server started"], "/health", http.StatusNotFound, "404 page not found"},
-		{"service expvar", ports["server started"], "/debug/vars", http.StatusNotFound, "404 page not found"},
-		{"service pprof", ports["server started"], "/debug/pprof/", http.StatusNotFound, "404 page not found"},
-		{"service health", ports["server started"], "/health", http.StatusOK, `"version":"vtest"`},
-	} {
-		res, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d%s", tt.port, tt.path))
-		testNil(t, err)
-		body, err := io.ReadAll(res.Body)
-		testNil(t, res.Body.Close())
-		testNil(t, err)
-		if res.StatusCode != tt.status || !strings.Contains(string(body), tt.body) {
-			t.Fatalf("%s: want %d %q; got %d %q", tt.name, tt.status, tt.body, res.StatusCode, body)
-		}
-	}
-
-	cancel()
-	select {
-	case err := <-done:
-		testNil(t, err)
-	case <-time.After(3 * time.Second):
-		t.Fatal("run did not finish after cancellation")
-	}
-}
-
-// TestRunDebugPortBindError verifies a debug listener that cannot bind stops the service too.
-func TestRunDebugPortBindError(t *testing.T) {
-	t.Parallel()
-	listener, err := net.Listen("tcp", ":0")
-	testNil(t, err)
-	t.Cleanup(func() { _ = listener.Close() })
-	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	err = run(ctx, log, testGetenv(map[string]string{"PORT": "0", "DEBUG_PORT": port}), "vtest")
-	if err == nil {
-		t.Fatal("expected bind error for occupied DEBUG_PORT")
-	}
-	testContains(t, port, err.Error())
-}
-
-// startup is a "server started" or "debug server started" log record.
-type startup struct {
-	Msg  string `json:"msg"`
-	Port int    `json:"port"`
-}
-
-// startupLog is an io.Writer that reports startup log records to a channel and drops the rest.
-type startupLog chan<- startup
-
-func (c startupLog) Write(p []byte) (int, error) {
-	var record startup
-	if err := json.Unmarshal(p, &record); err != nil {
-		return 0, err
-	}
-	if strings.HasSuffix(record.Msg, "started") {
-		c <- record
-	}
-	return len(p), nil
 }
 
 // TestRunBindError verifies a failed bind cannot report successful startup or change global logging.
@@ -222,7 +126,7 @@ func TestRunBindError(t *testing.T) {
 	defaultLogger := slog.Default()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	err = run(ctx, log, testGetenv(map[string]string{"PORT": port}), "vtest")
+	err = run(ctx, log, func(string) string { return port }, "vtest")
 	if err == nil {
 		t.Fatal("expected bind error for occupied port")
 	}
@@ -240,7 +144,7 @@ func TestRunCanceled(t *testing.T) {
 	var logs bytes.Buffer
 	log := slog.New(slog.NewJSONHandler(&logs, nil))
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, log, testGetenv(map[string]string{"PORT": "0"}), "vtest") }()
+	go func() { done <- run(ctx, log, func(string) string { return "0" }, "vtest") }()
 	select {
 	case err := <-done:
 		testNil(t, err)
@@ -707,18 +611,20 @@ func TestRootHTTPHandlerRoutes(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		path   string
+		debug  bool
 		status int
 		body   string
 	}{
 		{path: "/health", status: http.StatusOK, body: `"version":"vroot"`},
 		{path: "/debug/vars", status: http.StatusNotFound, body: "404 page not found"},
-		{path: "/debug/pprof/goroutine?debug=1", status: http.StatusNotFound, body: "404 page not found"},
+		{path: "/debug/vars", debug: true, status: http.StatusOK, body: `"memstats"`},
+		{path: "/debug/pprof/goroutine?debug=1", debug: true, status: http.StatusOK, body: "goroutine profile"},
 		{path: "/missing", status: http.StatusNotFound, body: "404 page not found"},
 	} {
-		t.Run(tt.path, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s debug=%t", tt.path, tt.debug), func(t *testing.T) {
 			t.Parallel()
 			var buffer bytes.Buffer
-			server := httptest.NewServer(newRootHTTPHandler(slog.New(slog.NewJSONHandler(&buffer, nil)), "vroot"))
+			server := httptest.NewServer(newRootHTTPHandler(slog.New(slog.NewJSONHandler(&buffer, nil)), "vroot", tt.debug))
 			t.Cleanup(server.Close)
 			server.Client().Timeout = 5 * time.Second
 			res, err := server.Client().Get(server.URL + tt.path)
@@ -776,11 +682,6 @@ type writeFailure struct {
 }
 
 func (w writeFailure) Write([]byte) (int, error) { return w.n, w.err }
-
-// testGetenv returns a getenv for run that knows only the given variables.
-func testGetenv(vars map[string]string) func(string) string {
-	return func(key string) string { return vars[key] }
-}
 
 func testEqual[T comparable](tb testing.TB, want, got T) {
 	tb.Helper()

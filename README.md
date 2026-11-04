@@ -15,12 +15,12 @@ $ curl localhost:8080/health
 
 `PORT` defaults to `8080`. Set `PORT=0` to let the OS choose an available port; the startup log reports the assigned port.
 
-`DEBUG_PORT` is unset by default. Set `DEBUG_PORT=6060` to serve `pprof` and `expvar` under `localhost:6060/debug/`, separate from the service port.
+`DEBUG` is unset by default. Set `DEBUG=1` to serve `pprof` and `expvar` under `/debug/`.
 
 ## Features
 - Graceful shutdown with `SIGINT`/`SIGTERM` signal handling
 - Health endpoint with version, git revision, and uptime
-- Debug endpoints (`pprof`, `expvar`) on a separate `DEBUG_PORT`, off by default
+- Debug endpoints (`pprof`, `expvar`) behind `DEBUG=1`
 - Structured access logging and panic recovery middleware
 - Designed for testability — integration tests against a real server, no mocks
 

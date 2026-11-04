@@ -49,7 +49,7 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 
 	server := &http.Server{
 		Addr:     fmt.Sprintf(":%d", port),
-		Handler:  newRootHTTPHandler(log, version),
+		Handler:  newRootHTTPHandler(log, version, getenv("DEBUG") != ""),
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
 		BaseContext: func(listener net.Listener) context.Context {
 			log.InfoContext(ctx, "server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port), slog.String("version", version))
@@ -60,42 +60,17 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	servers := []*http.Server{server}
 
-	// DEBUG_PORT serves pprof and expvar on a separate listener so they never share the service port.
-	if p := getenv("DEBUG_PORT"); p != "" {
-		debugPort, err := strconv.ParseUint(p, 10, 16)
-		if err != nil {
-			return fmt.Errorf("invalid DEBUG_PORT %q: port must be between 0 and 65535", p)
-		}
-		servers = append(servers, &http.Server{
-			Addr:     fmt.Sprintf(":%d", debugPort),
-			Handler:  newDebugHTTPHandler(),
-			ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
-			BaseContext: func(listener net.Listener) context.Context {
-				log.InfoContext(ctx, "debug server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port))
-				return context.Background()
-			},
-			ReadHeaderTimeout: 10 * time.Second,
-		})
-	}
+	defer server.Close() //nolint:errcheck // Close remaining connections on any exit.
 
-	defer func() {
-		for _, server := range servers {
-			_ = server.Close() // Close remaining connections on any exit.
+	served := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); errors.Is(err, http.ErrServerClosed) {
+			served <- nil
+		} else {
+			served <- err
 		}
 	}()
-
-	served := make(chan error, len(servers))
-	for _, server := range servers {
-		go func() {
-			if err := server.ListenAndServe(); errors.Is(err, http.ErrServerClosed) {
-				served <- nil
-			} else {
-				served <- err
-			}
-		}()
-	}
 
 	select {
 	case err := <-served:
@@ -104,13 +79,8 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 		log.InfoContext(ctx, "shutting down server", slog.Any("cause", context.Cause(ctx)))
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		var err, serveErr error
-		for _, server := range servers {
-			err = errors.Join(err, server.Shutdown(shutdownCtx))
-		}
-		for range servers {
-			serveErr = errors.Join(serveErr, <-served)
-		}
+		err := server.Shutdown(shutdownCtx)
+		serveErr := <-served
 		if err != nil {
 			return fmt.Errorf("server shutdown: %w", err)
 		}
@@ -121,9 +91,13 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 }
 
 // newRootHTTPHandler is the single source of truth for all endpoints, middleware, and their dependencies.
-func newRootHTTPHandler(log *slog.Logger, version string) http.Handler {
+// Debug endpoints are opt-in via DEBUG because pprof and expvar share the service port.
+func newRootHTTPHandler(log *slog.Logger, version string, debug bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
+	if debug {
+		mux.HandleFunc("/debug/", handleDebug())
+	}
 
 	handler := recovery(mux, log)
 	return accesslog(handler, log)
@@ -168,8 +142,8 @@ func handleHealth(version string) http.HandlerFunc {
 	}
 }
 
-// newDebugHTTPHandler serves pprof and expvar under /debug/ for the DEBUG_PORT listener.
-func newDebugHTTPHandler() http.Handler {
+// handleDebug registers pprof and expvar routes under /debug/.
+func handleDebug() http.HandlerFunc {
 	mux := http.NewServeMux()
 
 	// NOTE: this route is same as defined in net/http/pprof init function
@@ -181,7 +155,7 @@ func newDebugHTTPHandler() http.Handler {
 
 	// NOTE: this route is same as defined in expvar init function
 	mux.Handle("/debug/vars", expvar.Handler())
-	return mux
+	return mux.ServeHTTP
 }
 
 // accesslog logs the final response, including recovered panics and aborted requests.
