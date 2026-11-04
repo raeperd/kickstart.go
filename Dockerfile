@@ -1,6 +1,6 @@
 FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
 ARG VERSION=local
-ARG TARGETOS TARGETARCH
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -11,7 +11,7 @@ RUN go mod download
 
 COPY . .
 
-RUN make build TARGET_EXEC=app CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH VERSION=${VERSION}
+RUN make build TARGET_EXEC=app CGO_ENABLED=0 GOARCH=$TARGETARCH VERSION=${VERSION}
 
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
