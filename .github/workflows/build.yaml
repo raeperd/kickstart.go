@@ -6,6 +6,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'Makefile'
+      - '.golangci.yml'
+      - '.golangci-lint-version'
       - 'Dockerfile'
       - '.github/workflows/build.yaml'
   pull_request:
@@ -14,6 +16,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'Makefile'
+      - '.golangci.yml'
+      - '.golangci-lint-version'
       - 'Dockerfile'
       - '.github/workflows/build.yaml'
 
@@ -46,5 +50,5 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11
+          version-file: .golangci-lint-version
       - run: go run golang.org/x/tools/cmd/deadcode@latest -test ./...
