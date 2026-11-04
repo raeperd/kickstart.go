@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm as builder
+FROM golang:1.26-bookworm AS builder
 ARG VERSION=local
 
 WORKDIR /src
