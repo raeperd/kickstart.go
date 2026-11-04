@@ -17,6 +17,9 @@ on:
       - 'Dockerfile'
       - '.github/workflows/build.yaml'
 
+permissions:
+  contents: read      # Required to checkout code
+
 jobs:
   build:
     runs-on: ubuntu-latest
