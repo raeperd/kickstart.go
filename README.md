@@ -26,7 +26,7 @@ $ curl localhost:8080/health
 
 ## Start your own project
 - Use this template to create a new repository, or fork it
-- Find and replace all `raeperd/kickstart.go` with your repository name, then `github.com/raeperd/kickstart` in `go.mod` and `.golangci.yml` with your module path
+- Find and replace all `raeperd/kickstart.go`, then `raeperd/kickstart`, with your repository name
 
 ## Reference
 - [GopherCon Korea 2024 Session](https://www.youtube.com/live/DEZsPOSzNM0?si=ioPPAAb5JnOnpAoc&t=5113) (in Korean) / [Slides](https://raeperd.dev/go2024) (in English)
