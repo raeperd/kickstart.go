@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -214,15 +213,11 @@ func recovery(next http.Handler, log *slog.Logger) http.HandlerFunc {
 }
 
 // responseRecorder wraps [http.ResponseWriter] to record status and bytes written.
-// Unwrap lets [http.ResponseController] reach the underlying writer for deadlines
-// and other extensions, while Flush and Hijack are intercepted to keep the record
-// consistent with what the client received.
 type responseRecorder struct {
 	http.ResponseWriter
 	status     int // Zero means unwritten; 1xx is informational except HTTP/1.x 101.
 	protoMajor int
 	numBytes   int
-	hijacked   bool
 }
 
 // Write records bytes accepted by the writer and the implicit final 200 status.
@@ -244,36 +239,13 @@ func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 }
 
-// Flush implements [http.Flusher] for handlers that type-assert instead of using [http.ResponseController].
-func (re *responseRecorder) Flush() {
-	_ = re.FlushError()
-}
-
-// FlushError records the implicit final 200 that flushing an unwritten response sends.
-func (re *responseRecorder) FlushError() error {
-	err := http.NewResponseController(re.ResponseWriter).Flush()
-	if err == nil && !re.committed() {
-		re.status = http.StatusOK
-	}
-	return err
-}
-
-// Hijack hands the connection to the handler; net/http writes no response afterwards,
-// so the recorded status stays zero and recovery must not write a 500.
-func (re *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	conn, rw, err := http.NewResponseController(re.ResponseWriter).Hijack()
-	re.hijacked = err == nil
-	return conn, rw, err
-}
-
-// Unwrap exposes the underlying writer to [http.ResponseController], e.g. for SetReadDeadline and SetWriteDeadline.
+// Unwrap lets [http.ResponseController] reach the underlying writer for Flush, Hijack, and deadlines.
 func (re *responseRecorder) Unwrap() http.ResponseWriter {
 	return re.ResponseWriter
 }
 
-// committed reports whether a final status has been accepted or the connection was
-// hijacked. net/http treats 101 as final only for HTTP/1.x; every 1xx header is
-// informational under HTTP/2.
+// committed reports whether a final status has been accepted. net/http treats
+// 101 as final only for HTTP/1.x; every 1xx header is informational under HTTP/2.
 func (re *responseRecorder) committed() bool {
-	return re.hijacked || re.status >= 200 || (re.protoMajor == 1 && re.status == http.StatusSwitchingProtocols)
+	return re.status >= 200 || (re.protoMajor == 1 && re.status == http.StatusSwitchingProtocols)
 }

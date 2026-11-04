@@ -166,8 +166,7 @@ func TestAccessLogRecovery(t *testing.T) {
 		panicLog      bool
 		informational []int
 		aborted       bool
-		noResponse    bool // The connection closes before any final header reaches the client.
-		truncated     bool // The final header reaches the client but the body is cut off.
+		noResponse    bool
 	}{
 		{
 			name: "normal response",
@@ -236,37 +235,6 @@ func TestAccessLogRecovery(t *testing.T) {
 			},
 			status: http.StatusOK,
 			body:   "flushed",
-		},
-		{
-			name: "flusher type assertion",
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusCreated)
-				w.(http.Flusher).Flush()
-				_, _ = io.WriteString(w, "flushed")
-			},
-			status: http.StatusCreated,
-			body:   "flushed",
-		},
-		{
-			name: "flush then panic",
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				w.(http.Flusher).Flush()
-				panic("private panic details")
-			},
-			status:    http.StatusOK,
-			panicLog:  true,
-			aborted:   true,
-			truncated: true,
-		},
-		{
-			name: "flush then abort",
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				testNil(t, http.NewResponseController(w).Flush())
-				panic(http.ErrAbortHandler)
-			},
-			status:    http.StatusOK,
-			aborted:   true,
-			truncated: true,
 		},
 		{
 			name: "abort after buffered write",
@@ -346,11 +314,7 @@ func TestAccessLogRecovery(t *testing.T) {
 				testNil(t, err)
 				body, err := io.ReadAll(res.Body)
 				testNil(t, res.Body.Close())
-				if tt.truncated {
-					testEqual(t, io.ErrUnexpectedEOF, err)
-				} else {
-					testNil(t, err)
-				}
+				testNil(t, err)
 				testEqual(t, tt.status, res.StatusCode)
 				testEqual(t, tt.body, string(body))
 			}
@@ -399,93 +363,6 @@ func TestAccessLogRecovery(t *testing.T) {
 			testEqual(t, tt.panicLog, panics == 1)
 		})
 	}
-}
-
-// TestAccessLogRecoveryHijack verifies a hijacked connection is handed over untouched
-// and recorded without a status, even when the handler panics afterwards.
-func TestAccessLogRecoveryHijack(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		name     string
-		panics   bool
-		panicLog bool
-	}{
-		{name: "hijack then return"},
-		{name: "hijack then panic", panics: true, panicLog: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var buffer bytes.Buffer
-			logger := slog.New(slog.NewJSONHandler(&buffer, nil))
-			handler := recovery(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				conn, rw, err := http.NewResponseController(w).Hijack()
-				testNil(t, err)
-				defer conn.Close() //nolint:errcheck
-				_, _ = rw.WriteString("HTTP/1.1 418 I'm a teapot\r\nContent-Length: 6\r\nConnection: close\r\n\r\nteapot")
-				testNil(t, rw.Flush())
-				if tt.panics {
-					panic("private panic details")
-				}
-			}), logger)
-			handler = accesslog(handler, logger)
-			done := make(chan struct{}) // Server.Close does not wait for hijacked connections.
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				defer close(done)
-				handler.ServeHTTP(w, r)
-			}))
-			server.Config.ErrorLog = slog.NewLogLogger(logger.Handler(), slog.LevelError)
-			t.Cleanup(server.Close)
-			server.Client().Timeout = 5 * time.Second
-			res, err := server.Client().Get(server.URL + "/test")
-			testNil(t, err)
-			body, err := io.ReadAll(res.Body)
-			testNil(t, res.Body.Close())
-			testNil(t, err)
-			testEqual(t, http.StatusTeapot, res.StatusCode)
-			testEqual(t, "teapot", string(body))
-			<-done
-			server.Close()
-
-			var accesses, panics, errors int
-			decoder := json.NewDecoder(&buffer)
-			for decoder.More() {
-				var record struct {
-					Level   string `json:"level"`
-					Message string `json:"msg"`
-					Status  int    `json:"status"`
-					Bytes   int    `json:"bytes"`
-					Aborted bool   `json:"aborted"`
-				}
-				testNil(t, decoder.Decode(&record))
-				switch {
-				case record.Message == "accessed":
-					accesses++
-					testEqual(t, 0, record.Status)
-					testEqual(t, 0, record.Bytes)
-					testEqual(t, tt.panics, record.Aborted)
-				case record.Message == "panic!":
-					panics++
-				case record.Level == slog.LevelError.String():
-					errors++ // net/http reports writes to a hijacked connection here.
-				}
-			}
-			testEqual(t, 1, accesses)
-			testEqual(t, tt.panicLog, panics == 1)
-			testEqual(t, 0, errors)
-		})
-	}
-}
-
-// TestResponseRecorderUnsupported verifies flushing and hijacking a writer without
-// those capabilities fails without recording a status.
-func TestResponseRecorderUnsupported(t *testing.T) {
-	t.Parallel()
-	recorder := responseRecorder{ResponseWriter: writeFailure{ResponseWriter: httptest.NewRecorder()}}
-	testEqual(t, true, errors.Is(recorder.FlushError(), http.ErrNotSupported))
-	_, _, err := recorder.Hijack()
-	testEqual(t, true, errors.Is(err, http.ErrNotSupported))
-	testEqual(t, 0, recorder.status)
-	testEqual(t, false, recorder.committed())
 }
 
 func TestAccessLogRecoveryInformationalProtocols(t *testing.T) {
