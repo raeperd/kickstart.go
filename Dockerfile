@@ -17,6 +17,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /src/app /bin/app
 
+USER 65534:65534
 ENV PORT=8080
 EXPOSE 8080
 ENTRYPOINT ["app"]
