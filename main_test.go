@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,15 +15,21 @@ import (
 	"net/http/httptrace"
 	"net/textproto"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
 // TestMain provides one real server for integration tests and waits for its shutdown.
 func TestMain(m *testing.M) {
+	if os.Getenv("KICKSTART_TEST_MAIN") != "" {
+		main() // Re-executed by TestMainExit to observe the exit code and stderr.
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	port := make(chan int, 1)
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -88,6 +95,37 @@ func TestGetHealth(t *testing.T) {
 	if body.Uptime == "" {
 		t.Fatal("expected non-empty Uptime")
 	}
+}
+
+// TestMainExit re-executes the test binary as the program to check its exit code and output.
+func TestMainExit(t *testing.T) {
+	t.Parallel()
+	t.Run("invalid PORT exits 1", func(t *testing.T) {
+		t.Parallel()
+		cmd := exec.CommandContext(t.Context(), os.Args[0])
+		cmd.Env = append(os.Environ(), "KICKSTART_TEST_MAIN=1", "PORT=abc")
+		out, err := cmd.CombinedOutput()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("expected exit error; got %v: %s", err, out)
+		}
+		testEqual(t, 1, exitErr.ExitCode())
+		testContains(t, "invalid PORT", string(out))
+	})
+	t.Run("SIGINT exits 0", func(t *testing.T) {
+		t.Parallel()
+		cmd := exec.CommandContext(t.Context(), os.Args[0])
+		cmd.Env = append(os.Environ(), "KICKSTART_TEST_MAIN=1", "PORT=0")
+		stdout, err := cmd.StdoutPipe()
+		testNil(t, err)
+		testNil(t, cmd.Start())
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() && !strings.Contains(scanner.Text(), "server started") {
+		}
+		testNil(t, scanner.Err())
+		testNil(t, cmd.Process.Signal(syscall.SIGINT))
+		testNil(t, cmd.Wait())
+	})
 }
 
 // TestRunPort tests invalid PORT and DEBUG_PORT values.
