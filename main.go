@@ -48,7 +48,7 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 
 	server := &http.Server{
 		Addr:     fmt.Sprintf(":%d", port),
-		Handler:  newRootHTTPHandler(log, version),
+		Handler:  newRootHTTPHandler(log, version, getenv("DEBUG") != ""),
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
 		BaseContext: func(listener net.Listener) context.Context {
 			log.InfoContext(ctx, "server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port), slog.String("version", version))
@@ -90,10 +90,13 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 }
 
 // newRootHTTPHandler is the single source of truth for all endpoints, middleware, and their dependencies.
-func newRootHTTPHandler(log *slog.Logger, version string) http.Handler {
+// Debug endpoints are opt-in via DEBUG because pprof and expvar share the service port.
+func newRootHTTPHandler(log *slog.Logger, version string, debug bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
-	mux.HandleFunc("/debug/", handleDebug())
+	if debug {
+		mux.HandleFunc("/debug/", handleDebug())
+	}
 
 	handler := recovery(mux, log)
 	return accesslog(handler, log)
@@ -236,10 +239,9 @@ func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 }
 
-// SetWriteDeadline supports pprof's deadline extension without exposing Unwrap,
-// which would also allow connection takeover to bypass response accounting.
-func (re *responseRecorder) SetWriteDeadline(deadline time.Time) error {
-	return http.NewResponseController(re.ResponseWriter).SetWriteDeadline(deadline)
+// Unwrap lets [http.ResponseController] reach the underlying writer for Flush, Hijack, and deadlines.
+func (re *responseRecorder) Unwrap() http.ResponseWriter {
+	return re.ResponseWriter
 }
 
 // committed reports whether a final status has been accepted. net/http treats

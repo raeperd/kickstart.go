@@ -15,16 +15,18 @@ $ curl localhost:8080/health
 
 `PORT` defaults to `8080`. Set `PORT=0` to let the OS choose an available port; the startup log reports the assigned port.
 
+`DEBUG` is unset by default. Set `DEBUG=1` to serve `pprof` and `expvar` under `/debug/`.
+
 ## Features
 - Graceful shutdown with `SIGINT`/`SIGTERM` signal handling
 - Health endpoint with version, git revision, and uptime
-- Debug endpoints (`pprof`, `expvar`) out of the box
+- Debug endpoints (`pprof`, `expvar`) behind `DEBUG=1`
 - Structured access logging and panic recovery middleware
 - Designed for testability — integration tests against a real server, no mocks
 
 ## Start your own project
 - Use this template to create a new repository, or fork it
-- Find and replace all `raeperd/kickstart.go` with your repository name
+- Find and replace all `raeperd/kickstart.go`, then `raeperd/kickstart`, with your repository name
 
 ## Reference
 - [GopherCon Korea 2024 Session](https://www.youtube.com/live/DEZsPOSzNM0?si=ioPPAAb5JnOnpAoc&t=5113) (in Korean) / [Slides](https://raeperd.dev/go2024) (in English)
