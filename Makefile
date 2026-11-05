@@ -14,7 +14,7 @@ test:
 	go test -shuffle=on -race -coverprofile=coverage.txt ./...
 
 lint: tidy
-	golangci-lint run
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run
 	go run golang.org/x/tools/cmd/deadcode@latest -test ./...
 
 run: build
