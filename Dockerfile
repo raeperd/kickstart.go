@@ -1,5 +1,6 @@
-FROM golang:1.26-bookworm as builder
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
 ARG VERSION=local
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -10,13 +11,14 @@ RUN go mod download
 
 COPY . .
 
-RUN make build TARGET_EXEC=app CGO_ENABLED=0 VERSION=${VERSION}
+RUN make build TARGET_EXEC=app CGO_ENABLED=0 GOARCH=$TARGETARCH VERSION=${VERSION}
 
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /src/app /bin/app
 
+USER 65534:65534
 ENV PORT=8080
 EXPOSE 8080
 ENTRYPOINT ["app"]
