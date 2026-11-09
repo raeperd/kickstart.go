@@ -48,7 +48,7 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 
 	server := &http.Server{
 		Addr:     fmt.Sprintf(":%d", port),
-		Handler:  newRootHTTPHandler(log, version, getenv("DEBUG") != ""),
+		Handler:  newRootHTTPHandler(log, version),
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
 		BaseContext: func(listener net.Listener) context.Context {
 			log.InfoContext(ctx, "server started", slog.Int("port", listener.Addr().(*net.TCPAddr).Port), slog.String("version", version))
@@ -90,13 +90,10 @@ func run(ctx context.Context, log *slog.Logger, getenv func(string) string, vers
 }
 
 // newRootHTTPHandler is the single source of truth for all endpoints, middleware, and their dependencies.
-// Debug endpoints are opt-in via DEBUG because pprof and expvar share the service port.
-func newRootHTTPHandler(log *slog.Logger, version string, debug bool) http.Handler {
+func newRootHTTPHandler(log *slog.Logger, version string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(version))
-	if debug {
-		mux.HandleFunc("/debug/", handleDebug())
-	}
+	mux.HandleFunc("/debug/", handleDebug())
 
 	handler := recovery(mux, log)
 	return accesslog(handler, log)

@@ -488,20 +488,18 @@ func TestRootHTTPHandlerRoutes(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		path   string
-		debug  bool
 		status int
 		body   string
 	}{
 		{path: "/health", status: http.StatusOK, body: `"version":"vroot"`},
-		{path: "/debug/vars", status: http.StatusNotFound, body: "404 page not found"},
-		{path: "/debug/vars", debug: true, status: http.StatusOK, body: `"memstats"`},
-		{path: "/debug/pprof/goroutine?debug=1", debug: true, status: http.StatusOK, body: "goroutine profile"},
+		{path: "/debug/vars", status: http.StatusOK, body: `"memstats"`},
+		{path: "/debug/pprof/goroutine?debug=1", status: http.StatusOK, body: "goroutine profile"},
 		{path: "/missing", status: http.StatusNotFound, body: "404 page not found"},
 	} {
-		t.Run(fmt.Sprintf("%s debug=%t", tt.path, tt.debug), func(t *testing.T) {
+		t.Run(tt.path, func(t *testing.T) {
 			t.Parallel()
 			var buffer bytes.Buffer
-			server := httptest.NewServer(newRootHTTPHandler(slog.New(slog.NewJSONHandler(&buffer, nil)), "vroot", tt.debug))
+			server := httptest.NewServer(newRootHTTPHandler(slog.New(slog.NewJSONHandler(&buffer, nil)), "vroot"))
 			t.Cleanup(server.Close)
 			server.Client().Timeout = 5 * time.Second
 			res, err := server.Client().Get(server.URL + tt.path)
