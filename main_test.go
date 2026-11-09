@@ -225,22 +225,16 @@ func TestAccessLogRecovery(t *testing.T) {
 			informational: []int{http.StatusEarlyHints},
 		},
 		{
-			name: "write deadline without connection takeover",
+			name: "deadlines and flush pass through",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				controller := http.NewResponseController(w)
-				if err := controller.SetWriteDeadline(time.Now().Add(time.Minute)); err != nil {
-					panic(err)
-				}
-				conn, _, err := controller.Hijack()
-				if conn != nil {
-					_ = conn.Close()
-				}
-				if !errors.Is(err, http.ErrNotSupported) {
-					panic("connection takeover should be unsupported")
-				}
-				w.WriteHeader(http.StatusCreated)
+				testNil(t, controller.SetReadDeadline(time.Now().Add(time.Minute)))
+				testNil(t, controller.SetWriteDeadline(time.Now().Add(time.Minute)))
+				testNil(t, controller.Flush())
+				_, _ = io.WriteString(w, "flushed")
 			},
-			status: http.StatusCreated,
+			status: http.StatusOK,
+			body:   "flushed",
 		},
 		{
 			name: "abort after buffered write",

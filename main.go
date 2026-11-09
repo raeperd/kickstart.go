@@ -236,10 +236,9 @@ func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 }
 
-// SetWriteDeadline supports pprof's deadline extension without exposing Unwrap,
-// which would also allow connection takeover to bypass response accounting.
-func (re *responseRecorder) SetWriteDeadline(deadline time.Time) error {
-	return http.NewResponseController(re.ResponseWriter).SetWriteDeadline(deadline)
+// Unwrap lets [http.ResponseController] reach the underlying writer for Flush, Hijack, and deadlines.
+func (re *responseRecorder) Unwrap() http.ResponseWriter {
+	return re.ResponseWriter
 }
 
 // committed reports whether a final status has been accepted. net/http treats
