@@ -8,7 +8,7 @@ tidy:
 	go mod tidy
 
 build: tidy
-	go build -o $(TARGET_EXEC) -ldflags '-w -X main.Version=$(VERSION)' . 
+	go build -o $(TARGET_EXEC) -ldflags '-s -w -X main.Version=$(VERSION)' . 
 
 test:
 	go test -shuffle=on -race -coverprofile=coverage.txt ./...
