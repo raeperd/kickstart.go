@@ -18,7 +18,7 @@ $ curl localhost:8080/health
 ## Features
 - Graceful shutdown with `SIGINT`/`SIGTERM` signal handling
 - Health endpoint with version, git revision, and uptime
-- Debug endpoints (`pprof`, `expvar`) out of the box
+- Debug endpoints (`pprof`, `expvar`) out of the box — served on the service port, so restrict `/debug/` before exposing it publicly
 - Structured access logging and panic recovery middleware
 - Designed for testability — integration tests against a real server, no mocks
 
